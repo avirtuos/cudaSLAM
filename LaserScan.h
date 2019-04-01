@@ -1,6 +1,6 @@
 
 #include "rplidar.h" //RPLIDAR standard sdk, all-in-one header
-#include "BMP.h"
+#include "Map.h"
 #include <math.h>
 
 
@@ -27,13 +27,14 @@ private:
 	bool checkRPLIDARHealth(RPlidarDriver *drv);
 	float getAngle(const rplidar_response_measurement_node_hq_t& node);
     bool is_connected;
+    Map map;
     const char *com_port;
     _u32 baudrate;
     RPlidarDriver *drv;
 
 };
 
-LaserScan::LaserScan(const char *com_port_arg, _u32 baudrate_arg)
+LaserScan::LaserScan(const char *com_port_arg, _u32 baudrate_arg) : map(2000,2000)
 {
     com_port = com_port_arg;
     baudrate = baudrate_arg;
@@ -45,9 +46,6 @@ LaserScan::LaserScan(const char *com_port_arg, _u32 baudrate_arg)
         fprintf(stderr, "insufficent memory, exit\n");
         exit(-2);
     }
-
-    //BMP bmp2(2000, 2000);
-    //bmp2.fill_region(250,1000,10,10,255,0,0,255);
 }
 
 
@@ -56,29 +54,45 @@ void LaserScan::scan()
     rplidar_response_measurement_node_hq_t nodes[8192];
     size_t   count = _countof(nodes);
 	u_result op_result = drv->grabScanDataHq(nodes, count);
-
+    uint32_t max_x = 0;
+    uint32_t max_y = 0;
+    uint32_t min_x = 100000000;
+    uint32_t min_y = 100000000;
     if (IS_OK(op_result))
     {
         drv->ascendScanData(nodes, count);
 
         for (int pos = 0; pos < (int)count ; ++pos)
         {
-            float distance = nodes[pos].dist_mm_q2 / 4.0f;
+            float distance = (nodes[pos].dist_mm_q2 / 4.0f)/10;
             float angle = getAngle(nodes[pos]);
-            uint32_t x = 250 + roundf(sin (angle * PI / 180) * distance) / 3;
-            uint32_t y = 1000 + roundf(cos (angle * PI / 180) * distance) / 3;
+            uint32_t x = 1000 + roundf(sin (angle * PI / 180) * distance);
+            uint32_t y = 1000 + roundf(cos (angle * PI / 180) * distance);
             uint32_t quality = 3 * round(nodes[pos].quality >> RPLIDAR_RESP_MEASUREMENT_QUALITY_SHIFT);
-            //bmp2.fill_region(x, y, 4, 4, quality, 0, 0, 255);
-            printf("%s theta: %03.2f Dist: %08.2f Q: %d X: %d Y: %d\n",
+            map.addScanData(x, y, quality);
+            /*printf("%s theta: %03.2f Dist: %08.2f Q: %d X: %d Y: %d\n",
                    (nodes[pos].quality & RPLIDAR_RESP_MEASUREMENT_SYNCBIT) ? "S " : "  ",
                    angle,
                    distance,
                    quality,
                    x,
-                   y);
+                   y);*/
+
+            if( x > max_x) {
+                max_x = x;
+            }
+            if( y > max_y) {
+                max_y = y;
+            }
+            if( x < min_x) {
+                min_x = x;
+            }
+            if( y < min_y) {
+                min_y = y;
+            }
         }
-        //bmp2.write("t1_24_copy.bmp");
     }
+    printf("X_MIN: %d, X_MAX: %d, Y_MIN: %d, Y_MAX: %d \n", min_x, max_x, min_y, max_y);
 }
 
 bool LaserScan::stop()
@@ -86,6 +100,7 @@ bool LaserScan::stop()
     is_connected = false;
     if(drv != NULL)
     {
+        map.flush();
         drv->stop();
         drv->stopMotor();
         RPlidarDriver::DisposeDriver(drv);

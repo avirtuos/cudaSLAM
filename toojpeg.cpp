@@ -568,7 +568,7 @@ bool writeJpeg(TooJpeg::WRITE_ONE_BYTE output, const void* pixels_, unsigned sho
               auto column   = clamp(mcuX + deltaX + blockX, 0, width  - 1); // must not exceed image borders, replicate last row/column if needed
               auto row      = clamp(mcuY + deltaY + blockY, 0, height - 1);
               // RGB: 3 bytes per pixel, grayscale: 1 byte per pixel
-              auto pixelPos = (row * width + column) * numComponents; 
+              auto pixelPos = (row * width + column) * (numComponents+1); 
 
               // grayscale images have solely a Y channel which can be easily derived from the input pixel by shifting it by 128
               if (!isRGB)
@@ -637,7 +637,7 @@ bool writeJpeg(TooJpeg::WRITE_ONE_BYTE output, const void* pixels_, unsigned sho
           auto numSamples = sampling * sampling;
           for (auto s = 0; s < numSamples; s++)
           {
-            auto pixelPosSample = (row * width + column + offsets[s]) * numComponents;
+            auto pixelPosSample = (row * width + column + offsets[s]) * (numComponents+1);
             r += pixels[pixelPosSample    ];
             g += pixels[pixelPosSample + 1];
             b += pixels[pixelPosSample + 2];

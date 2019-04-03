@@ -60,6 +60,7 @@ void LaserScan::scan()
     uint32_t min_y = 100000000;
     if (IS_OK(op_result))
     {
+        map.beginScan();
         drv->ascendScanData(nodes, count);
 
         for (int pos = 0; pos < (int)count ; ++pos)
@@ -91,6 +92,7 @@ void LaserScan::scan()
                 min_y = y;
             }
         }
+        map.endScan();
     }
     printf("X_MIN: %d, X_MAX: %d, Y_MIN: %d, Y_MAX: %d \n", min_x, max_x, min_y, max_y);
 }

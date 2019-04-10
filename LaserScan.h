@@ -1,6 +1,6 @@
 
 #include "rplidar.h" //RPLIDAR standard sdk, all-in-one header
-#include "Map.h"
+#include "TelemetryPoint.h"
 #include <math.h>
 
 
@@ -17,30 +17,32 @@ class LaserScan
 
 public:
     LaserScan(const char *com_port_arg, _u32 baudrate_arg);
+    int scan(TelemetryPoint result_buffer[], const int buffer_length);
     bool start();
     bool stop();
     bool connect();
-    void scan();
+    TelemetryPoint* scan();
 
 
 private:
 	bool checkRPLIDARHealth(RPlidarDriver *drv);
 	float getAngle(const rplidar_response_measurement_node_hq_t& node);
     bool is_connected;
-    Map map;
     const char *com_port;
     _u32 baudrate;
     RPlidarDriver *drv;
+    rplidar_response_measurement_node_hq_t nodes[8192];
+    size_t node_count;
 
 };
 
-LaserScan::LaserScan(const char *com_port_arg, _u32 baudrate_arg) : map(2000,2000)
+LaserScan::LaserScan(const char *com_port_arg, _u32 baudrate_arg)
 {
     com_port = com_port_arg;
     baudrate = baudrate_arg;
     is_connected = false;
     drv = RPlidarDriver::CreateDriver(DRIVER_TYPE_SERIALPORT);
-
+    node_count = _countof(nodes);
     if (!drv)
     {
         fprintf(stderr, "insufficent memory, exit\n");
@@ -49,52 +51,35 @@ LaserScan::LaserScan(const char *com_port_arg, _u32 baudrate_arg) : map(2000,200
 }
 
 
-void LaserScan::scan()
+int LaserScan::scan(TelemetryPoint result_buffer[], const int buffer_length)
 {
-    rplidar_response_measurement_node_hq_t nodes[8192];
-    size_t   count = _countof(nodes);
-	u_result op_result = drv->grabScanDataHq(nodes, count);
-    uint32_t max_x = 0;
-    uint32_t max_y = 0;
-    uint32_t min_x = 100000000;
-    uint32_t min_y = 100000000;
+    int result_size = 0;
+    TelemetryPoint *cur = result_buffer;
+	u_result op_result = drv->grabScanDataHq(nodes, node_count);
     if (IS_OK(op_result))
     {
-        map.beginScan();
-        drv->ascendScanData(nodes, count);
+        drv->ascendScanData(nodes, node_count);
 
-        for (int pos = 0; pos < (int)count ; ++pos)
+        for (int pos = 0; pos < (int)node_count && result_size < buffer_length; ++pos)
         {
-            float distance = (nodes[pos].dist_mm_q2 / 4.0f)/10;
+            float distance = (nodes[pos].dist_mm_q2 / 4.0f);
             float angle = getAngle(nodes[pos]);
-            uint32_t x = 1000 + roundf(sin (angle * PI / 180) * distance);
-            uint32_t y = 1000 + roundf(cos (angle * PI / 180) * distance);
-            uint32_t quality = 3 * round(nodes[pos].quality >> RPLIDAR_RESP_MEASUREMENT_QUALITY_SHIFT);
-            map.addScanData(x, y, quality);
-            /*printf("%s theta: %03.2f Dist: %08.2f Q: %d X: %d Y: %d\n",
-                   (nodes[pos].quality & RPLIDAR_RESP_MEASUREMENT_SYNCBIT) ? "S " : "  ",
-                   angle,
-                   distance,
-                   quality,
-                   x,
-                   y);*/
+            int x = roundf(sin (angle * PI / 180) * distance);
+            int y = roundf(cos (angle * PI / 180) * distance);
+            uint32_t quality = round(nodes[pos].quality >> RPLIDAR_RESP_MEASUREMENT_QUALITY_SHIFT);
+            
+            cur->x = x;
+            cur->y = y;
+            cur->quality = quality;
+            cur->distance = distance;
+            cur->angle = angle;
 
-            if( x > max_x) {
-                max_x = x;
-            }
-            if( y > max_y) {
-                max_y = y;
-            }
-            if( x < min_x) {
-                min_x = x;
-            }
-            if( y < min_y) {
-                min_y = y;
-            }
+            result_size++;
+            cur = result_buffer+result_size;
         }
-        map.endScan();
     }
-    printf("X_MIN: %d, X_MAX: %d, Y_MIN: %d, Y_MAX: %d \n", min_x, max_x, min_y, max_y);
+
+    return result_size;
 }
 
 bool LaserScan::stop()
@@ -102,7 +87,6 @@ bool LaserScan::stop()
     is_connected = false;
     if(drv != NULL)
     {
-        map.flush();
         drv->stop();
         drv->stopMotor();
         RPlidarDriver::DisposeDriver(drv);
@@ -159,7 +143,6 @@ bool LaserScan::start()
     is_connected = true;
     return true;
 }
-
 
 bool LaserScan::checkRPLIDARHealth(RPlidarDriver *drv)
 {

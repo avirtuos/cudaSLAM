@@ -36,6 +36,7 @@
 #include "CheckpointWriter.h"
 #include "TelemetryPoint.h"
 #include "CudaUtils.h"
+#include "MotionSystem.h"
 
 #define DEBUG
 
@@ -54,6 +55,9 @@ int main(int argc, const char *argv[])
 {
     const char *com_path = argv[1];
     const _u32 com_baudrate = strtoul(argv[2], NULL, 10);
+
+    char dest[18] = "00:1B:10:80:13:ED";
+    MotionSystem ms(dest);
 
     LaserScan laser(com_path, com_baudrate);
     laser.start();
@@ -80,7 +84,7 @@ int main(int argc, const char *argv[])
 
         t1 = high_resolution_clock::now();
         CheckpointWriter::advanceCheckpoint();
-        CheckpointWriter::checkpoint(2000,2000, h_scan_p, num_scan_samples);
+        CheckpointWriter::checkpoint("scan", 2000,2000, h_scan_p, num_scan_samples);
         map.update(100, h_scan_p, num_scan_samples);
         t2 = high_resolution_clock::now();
         auto cp_dur = duration_cast<milliseconds>( t2 - t1 ).count();
@@ -89,7 +93,25 @@ int main(int argc, const char *argv[])
         if (ctrl_c_pressed)
         {
             laser.stop();
+            ms.stop();
             break;
+        }
+
+        int c = getchar();
+        if(c == 10){
+            //no-op
+        } else if(c == 32){
+            ms.stop();
+        } else if(c == 119){
+            ms.forward();
+        } else if(c == 115){
+            ms.backward();
+        } else if(c == 97){
+            ms.left();
+        } else if(c == 100){
+            ms.right();
+        } else {
+            printf("Unknown key: %c %d",c,c);
         }
     }
 

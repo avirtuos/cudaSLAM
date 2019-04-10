@@ -16,7 +16,7 @@ class CheckpointWriter
 {
 
 public:
-    static void checkpoint(int32_t width, int32_t height, TelemetryPoint scan_data[], int scan_size);
+    static void checkpoint(const string prefix,int32_t width, int32_t height, TelemetryPoint scan_data[], int scan_size);
     static void advanceCheckpoint();
 
 private:
@@ -37,7 +37,7 @@ void CheckpointWriter::writeJpegByte(unsigned char oneByte)
     jpeg << oneByte;
 }
 
-void CheckpointWriter::checkpoint(int32_t width, int32_t height, TelemetryPoint scan_data[], int scan_size){
+void CheckpointWriter::checkpoint(const string prefix, int32_t width, int32_t height, TelemetryPoint scan_data[], int scan_size){
 	int scale_factor = 10;
 	unique_lock<mutex> lock(jpeg_mutex);
 	unsigned char *pixels = new unsigned char[width*height*channels];
@@ -53,7 +53,7 @@ void CheckpointWriter::checkpoint(int32_t width, int32_t height, TelemetryPoint 
 	}
 	addScanData(pixels, width, height, width/2, height/2, 0, 255 ,0 , 255);
 
-	sprintf (buffer, "map_%d_%d.jpg", _checkpoint_num, scan_size);
+	sprintf (buffer, "map_%s_%d_%d.jpg",prefix.c_str(), _checkpoint_num, scan_size);
 	jpeg.open(buffer);
     TooJpeg::writeJpeg(writeJpegByte, pixels, width, height);
 	jpeg.close();

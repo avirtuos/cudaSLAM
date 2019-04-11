@@ -53,6 +53,16 @@ void ctrlc(int)
 
 int main(int argc, const char *argv[])
 {
+    int deviceCount;
+    cudaGetDeviceCount(&deviceCount);
+    int device;
+    for (device = 0; device < deviceCount; ++device) {
+     cudaDeviceProp deviceProp;
+     cudaGetDeviceProperties(&deviceProp, device);
+     printf("Device %d has compute capability %d.%d.\n",
+     device, deviceProp.major, deviceProp.minor);
+    }
+
     const char *com_path = argv[1];
     const _u32 com_baudrate = strtoul(argv[2], NULL, 10);
 
@@ -111,7 +121,7 @@ int main(int argc, const char *argv[])
         } else if(c == 100){
             ms.right();
         } else {
-            printf("Unknown key: %c %d",c,c);
+            printf("Unknown key: %c %d\n",c,c);
         }
     }
 

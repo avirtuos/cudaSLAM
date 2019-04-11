@@ -62,7 +62,7 @@ int LaserScan::scan(TelemetryPoint result_buffer[], const int buffer_length)
 
         for (int pos = 0; pos < (int)node_count && result_size < buffer_length; ++pos)
         {
-            float distance = (nodes[pos].dist_mm_q2 / 4.0f);
+            float distance = (nodes[pos].dist_mm_q2 / 4.0f)/10;
             float angle = getAngle(nodes[pos]);
             int x = roundf(sin (angle * PI / 180) * distance);
             int y = roundf(cos (angle * PI / 180) * distance);

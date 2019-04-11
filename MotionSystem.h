@@ -20,11 +20,15 @@ public:
 
 private:
     int client_sd;
+    bool enabled;
 
 };
 
 MotionSystem::MotionSystem(char dest[18])
 {
+    enabled = true;
+
+    if(!enabled){return;}
     struct sockaddr_rc addr = { 0 };
     int status;
     //char dest[18] = "00:1B:10:80:13:ED";
@@ -48,11 +52,13 @@ MotionSystem::MotionSystem(char dest[18])
 
 MotionSystem::~MotionSystem()
 {
+    if(!enabled){return;}
     close(client_sd);
 }
 
 void MotionSystem::stop()
 {
+    if(!enabled){return;}
     int status = write(client_sd, " ", 1);
     if(status < 0) {
         perror("Failed to send 'stop' directive to MotionSystem via bluetooth.");
@@ -61,6 +67,7 @@ void MotionSystem::stop()
 
 void MotionSystem::forward()
 {
+    if(!enabled){return;}
     int status = write(client_sd, "w", 1);
     if(status < 0) {
         perror("Failed to send 'forward' directive to MotionSystem via bluetooth.");
@@ -69,6 +76,7 @@ void MotionSystem::forward()
 
 void MotionSystem::backward()
 {
+    if(!enabled){return;}
     int status = write(client_sd, "s", 1);
     if(status < 0) {
         perror("Failed to send 'backward' directive to MotionSystem via bluetooth.");
@@ -77,6 +85,7 @@ void MotionSystem::backward()
 
 void MotionSystem::left()
 {
+    if(!enabled){return;}
     int status = write(client_sd, "a", 1);
     if(status < 0) {
         perror("Failed to send 'left' directive to MotionSystem via bluetooth.");
@@ -85,6 +94,7 @@ void MotionSystem::left()
 
 void MotionSystem::right()
 {
+    if(!enabled){return;}
     int status = write(client_sd, "d", 1);
     if(status < 0) {
         perror("Failed to send 'right' directive to MotionSystem via bluetooth.");

@@ -44,7 +44,7 @@ void CheckpointWriter::checkpoint(const string prefix, int32_t width, int32_t he
 	for(int32_t i = 0; i < height*width; i++){
 		if(map[i].occupancy > 0) {
 			int x = i % width;
-			int y = (i - x)/height;
+			int y = height - ((i - x)/height);
 			addScanData(pixels, width, height, x, y, 255, 0 ,0 , 255);
 		}
 	}

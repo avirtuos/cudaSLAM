@@ -36,20 +36,26 @@ Map::~Map()
 }
 
 __global__
-void cudaUpdateMap(int *result, TelemetryPoint *scan_buffer, int *scan_size, MapPoint *map, int* map_width, int* map_height)
+void cudaUpdateMap(int n, int *result, TelemetryPoint *scan_buffer, int *scan_size, MapPoint *map, int* map_width, int* map_height)
 {
-    *result=0;
     int offset = blockIdx.x*blockDim.x + threadIdx.x;
-    printf("Hello from block %d, dim %d, thread %d, offset: %d\n", blockIdx.x, blockDim.x, threadIdx.x, offset);
+    result[offset]=0;
+
+    if(offset > n || offset > *scan_size) {
+        return;
+    }
+
+
+    //printf("Hello from block %d, dim %d, thread %d, offset: %d\n", blockIdx.x, blockDim.x, threadIdx.x, offset);
     
-    for(int i = 0; i < *scan_size || i < 10; i = i + (1 + offset)){
+    for(int i = offset; i < *scan_size; i = i + n){
         TelemetryPoint *cur_point = scan_buffer+i;
         int pos = ((*map_height/2 + cur_point->y) * *map_width) + (*map_height/2 + cur_point->x);
         MapPoint *cur_map = map+pos;
         if(cur_map->occupancy < 1000) {
             cur_map->occupancy++;
         }
-        *result = *result +1; 
+        result[offset] = result[offset] + 1;
     }
 }
 
@@ -60,24 +66,27 @@ TelemetryPoint Map::update(int32_t search_distance, TelemetryPoint scan_data[], 
     checkCuda( cudaEventCreate(&stopEvent) );
     checkCuda( cudaEventRecord(startEvent, 0) );
 
-    printf("HERE1\n");
     const unsigned int bytes = scan_size * sizeof(TelemetryPoint);
     cudaMemcpy(scan_buffer_d, scan_data, bytes, cudaMemcpyHostToDevice);
     cudaMemcpy(scan_size_d, &scan_size, sizeof(int), cudaMemcpyHostToDevice);
 
+    int dim = 1024;
+    int n = dim * dim;
     int *result_d;
     int *result_h;
-    checkCuda(cudaMalloc((void **)&result_d, sizeof(int)));
-    checkCuda(cudaMallocHost((void **)&result_h, sizeof(int)));
+    checkCuda(cudaMalloc((void **)&result_d, n*sizeof(int)));
+    checkCuda(cudaMallocHost((void **)&result_h, n*sizeof(int)));
 
-printf("HERE2\n");
-    cudaUpdateMap<<<1, 1>>>(result_d, scan_buffer_d, scan_size_d, map_d, width_d, height_d);
-printf("HERE3\n");
+    cudaUpdateMap<<<dim, dim>>>(n, result_d, scan_buffer_d, scan_size_d, map_d, width_d, height_d);
 
     cudaMemcpy(map_h, map_d, map_bytes, cudaMemcpyDeviceToHost);
-    cudaMemcpy(result_h, result_d, sizeof(int), cudaMemcpyDeviceToHost);
+    cudaMemcpy(result_h, result_d, n*sizeof(int), cudaMemcpyDeviceToHost);
 
-    printf("Result: %d\n", *result_h);
+    int sumResult = 0;
+    for(int i = 0; i < n && i < scan_size; i++){
+        sumResult += result_h[i];
+    }
+    printf("Result: %d\n", sumResult);
 
     cudaFreeHost(result_h);
     cudaFree(result_d);

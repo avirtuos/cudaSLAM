@@ -1,3 +1,5 @@
 #!/bin/bash
-sudo rm -f ./map_*jpg
-sudo ./a.out /dev/ttyUSB0 256000
+ulimit -c unlimited
+ulimit -a
+rm -f ./map_*jpg
+./a.out /dev/ttyUSB0 256000

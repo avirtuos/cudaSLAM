@@ -41,6 +41,43 @@ void cudaUpdateMap(int n, int *result, TelemetryPoint *scan_buffer, int *scan_si
     int offset = blockIdx.x*blockDim.x + threadIdx.x;
     result[offset]=0;
 
+    int x_offset = 0;
+    int y_offset = 0;
+
+    LocalizedOrigin best;
+    best.score = -1;
+
+    //Try various angles - TODO: find better sampling technique here possibly even re-sampling
+    for(int angle_offset = 0; angle_offset < 360; angle_offset++){
+        //For each point see if we have a hit
+
+        LocalizedOrigin current_sim;
+        current_sim.x_offset = x_offset;
+        current_sim.y_offset = y_offset;
+        current_sim.angle_offset = angle_offset;
+        current_sim.score = 0;
+
+        for(int scan_point = 0; scan_point < scan_size; scan_point++){
+            int angle_offset = 0;
+
+            float distance = scan_buffer[scan_point].distance;
+            float angle_radians = scan_buffer[scan_point].angle;
+
+            int x = x_offset + roundf(sin (angle_offset + (angle_radians * PI / 180)) * distance);
+            int y = y_offset + roundf(cos (angle_offset + (angle_radians * PI / 180)) * distance);
+
+            int pos = ((*map_height/2 + y) * *map_width) + (*map_width/2 + x);
+            MapPoint *map_point = map+pos;
+            if(map_point->occupancy > 0){
+                current_sim.score++;
+            }
+        }
+
+        if(best.score < current_sim.score) {
+            best.score = current_sim.score;
+        }
+    }
+
     if(offset > n || offset > *scan_size) {
         return;
     }
@@ -59,6 +96,7 @@ void cudaUpdateMap(int n, int *result, TelemetryPoint *scan_buffer, int *scan_si
     }
 }
 
+
 TelemetryPoint Map::update(int32_t search_distance, TelemetryPoint scan_data[], int scan_size)
 {
     cudaEvent_t startEvent, stopEvent;
@@ -72,21 +110,19 @@ TelemetryPoint Map::update(int32_t search_distance, TelemetryPoint scan_data[], 
 
     int dim = 1024;
     int n = dim * dim;
-    int *result_d;
-    int *result_h;
-    checkCuda(cudaMalloc((void **)&result_d, n*sizeof(int)));
-    checkCuda(cudaMallocHost((void **)&result_h, n*sizeof(int)));
+    LocalizedOrigin *result_d;
+    LocalizedOrigin *result_h;
+    checkCuda(cudaMalloc((void **)&result_d, n*sizeof(LocalizedOrigin)));
+    checkCuda(cudaMallocHost((void **)&result_h, n*sizeof(LocalizedOrigin)));
 
     cudaUpdateMap<<<dim, dim>>>(n, result_d, scan_buffer_d, scan_size_d, map_d, width_d, height_d);
 
     cudaMemcpy(map_h, map_d, map_bytes, cudaMemcpyDeviceToHost);
-    cudaMemcpy(result_h, result_d, n*sizeof(int), cudaMemcpyDeviceToHost);
+    cudaMemcpy(result_h, result_d, n*sizeof(LocalizedOrigin), cudaMemcpyDeviceToHost);
 
-    int sumResult = 0;
     for(int i = 0; i < n && i < scan_size; i++){
-        sumResult += result_h[i];
+        printf("Particle Filter Result: i[%d] x[%d] y[%d] angle[%.2f] quality[%d]\n", result_h[i].x_offset, result_h[i].y_offset, result_h[i].angle_offset, result_h[i].quality);
     }
-    printf("Result: %d\n", sumResult);
 
     cudaFreeHost(result_h);
     cudaFree(result_d);

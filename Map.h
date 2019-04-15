@@ -8,6 +8,7 @@
 #include "CudaUtils.h"
 #include "CheckpointWriter.h"
 #include "TelemetryPoint.h"
+#include "LocalizedOrigin.h"
 #include "MapPoint.h"
 #include <math.h>
 #include <mutex>          // std::mutex, std::unique_lock

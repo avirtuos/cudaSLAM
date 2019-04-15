@@ -28,6 +28,7 @@ public:
 
 
 private:
+    bool map_init;
     int width;
     int height;
     MapPoint *map_h;

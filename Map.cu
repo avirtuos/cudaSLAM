@@ -3,6 +3,7 @@
 
 Map::Map(int width_arg, int height_arg, int scan_buffer_size)
 {
+    map_init = false;
     width = width_arg;
     height = height_arg;
 
@@ -35,14 +36,17 @@ Map::~Map()
     cudaFree(scan_size_d);
 }
 
+//TODO: There is opportunity to speed this up using hints from odometry or even just simple distance traveled estimates.
 __global__
-void cudaUpdateMap(int n, int *result, TelemetryPoint *scan_buffer, int *scan_size, MapPoint *map, int* map_width, int* map_height)
+void cudaUpdateMap(int n, LocalizedOrigin *result, TelemetryPoint *scan_buffer, int *scan_size, MapPoint *map, int* map_width, int* map_height)
 {
     int offset = blockIdx.x*blockDim.x + threadIdx.x;
-    result[offset]=0;
+    if(offset > 10) {
+        return;
+    }
 
-    int x_offset = 0;
-    int y_offset = 0;
+    int x_offset = -512 + (int)threadIdx.x;
+    int y_offset = -512 + (int)blockIdx.x;
 
     LocalizedOrigin best;
     best.score = -1;
@@ -57,14 +61,14 @@ void cudaUpdateMap(int n, int *result, TelemetryPoint *scan_buffer, int *scan_si
         current_sim.angle_offset = angle_offset;
         current_sim.score = 0;
 
-        for(int scan_point = 0; scan_point < scan_size; scan_point++){
+        for(int scan_point = 0; scan_point < *scan_size; scan_point++){
             int angle_offset = 0;
 
             float distance = scan_buffer[scan_point].distance;
             float angle_radians = scan_buffer[scan_point].angle;
 
-            int x = x_offset + roundf(sin (angle_offset + (angle_radians * PI / 180)) * distance);
-            int y = y_offset + roundf(cos (angle_offset + (angle_radians * PI / 180)) * distance);
+            int x = x_offset + roundf(sin (angle_offset + (angle_radians * 3.14159265 / 180)) * distance);
+            int y = y_offset + roundf(cos (angle_offset + (angle_radians * 3.14159265 / 180)) * distance);
 
             int pos = ((*map_height/2 + y) * *map_width) + (*map_width/2 + x);
             MapPoint *map_point = map+pos;
@@ -74,25 +78,36 @@ void cudaUpdateMap(int n, int *result, TelemetryPoint *scan_buffer, int *scan_si
         }
 
         if(best.score < current_sim.score) {
+            best.x_offset = current_sim.x_offset;
+            best.y_offset = current_sim.y_offset;
+            best.angle_offset = current_sim.angle_offset;
             best.score = current_sim.score;
         }
     }
 
-    if(offset > n || offset > *scan_size) {
-        return;
-    }
+
+    result[offset].x_offset = best.x_offset;
+    result[offset].y_offset = best.y_offset;
+    result[offset].angle_offset = best.angle_offset;
+    result[offset].score = best.score;
+    printf("Particle Filter Result: i[%d] x[%d] y[%d] angle[%.2f] score[%d]\n", offset, best.x_offset, best.y_offset, best.angle_offset, best.score);
+}
 
 
-    //printf("Hello from block %d, dim %d, thread %d, offset: %d\n", blockIdx.x, blockDim.x, threadIdx.x, offset);
-    
-    for(int i = offset; i < *scan_size; i = i + n){
+//TODO: So far we've only been working on Localization, we need to start thinking about mapping or rather
+//when to update the map with newly scanned points. I suspect that cold start might be a special case but 
+//it needs more thinking. I like the idea of the map being fully mutable, not just additive which is what
+//I've seen from other SLAM impls.
+__global__
+void cudaInitMap(TelemetryPoint *scan_buffer, int *scan_size, MapPoint *map, int* map_width, int* map_height)
+{
+    for(int i = 0; i < *scan_size; i++){
         TelemetryPoint *cur_point = scan_buffer+i;
         int pos = ((*map_height/2 + cur_point->y) * *map_width) + (*map_height/2 + cur_point->x);
         MapPoint *cur_map = map+pos;
         if(cur_map->occupancy < 1000) {
             cur_map->occupancy++;
         }
-        result[offset] = result[offset] + 1;
     }
 }
 
@@ -115,13 +130,19 @@ TelemetryPoint Map::update(int32_t search_distance, TelemetryPoint scan_data[], 
     checkCuda(cudaMalloc((void **)&result_d, n*sizeof(LocalizedOrigin)));
     checkCuda(cudaMallocHost((void **)&result_h, n*sizeof(LocalizedOrigin)));
 
+    if(!map_init){
+        cudaInitMap<<<1, 1>>>(scan_buffer_d, scan_size_d, map_d, width_d, height_d);
+        map_init = true;
+    }
     cudaUpdateMap<<<dim, dim>>>(n, result_d, scan_buffer_d, scan_size_d, map_d, width_d, height_d);
 
     cudaMemcpy(map_h, map_d, map_bytes, cudaMemcpyDeviceToHost);
     cudaMemcpy(result_h, result_d, n*sizeof(LocalizedOrigin), cudaMemcpyDeviceToHost);
 
-    for(int i = 0; i < n && i < scan_size; i++){
-        printf("Particle Filter Result: i[%d] x[%d] y[%d] angle[%.2f] quality[%d]\n", result_h[i].x_offset, result_h[i].y_offset, result_h[i].angle_offset, result_h[i].quality);
+    for(int i = 0; i < n; i++){
+        if(result_h[i].score != 0){
+            printf("Particle Filter Result: i[%d] x[%d] y[%d] angle[%.2f] score[%d]\n", i, result_h[i].x_offset, result_h[i].y_offset, result_h[i].angle_offset, result_h[i].score);
+        }
     }
 
     cudaFreeHost(result_h);

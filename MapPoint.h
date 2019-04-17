@@ -3,7 +3,7 @@
 
 struct MapPoint
 {
-	int occupancy;
+	unsigned char occupancy;
 };
 
 #endif

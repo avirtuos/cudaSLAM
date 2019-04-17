@@ -63,9 +63,9 @@ int LaserScan::scan(TelemetryPoint result_buffer[], const int buffer_length)
         for (int pos = 0; pos < (int)node_count && result_size < buffer_length; ++pos)
         {
             float distance = (nodes[pos].dist_mm_q2 / 4.0f)/10;
-            float angle = getAngle(nodes[pos]);
-            int x = roundf(sin (angle * PI / 180) * distance);
-            int y = roundf(cos (angle * PI / 180) * distance);
+            float angle = (getAngle(nodes[pos])* 3.14159265 / 180);
+            int x = roundf(sin (angle) * distance);
+            int y = roundf(cos (angle) * distance);
             uint32_t quality = round(nodes[pos].quality >> RPLIDAR_RESP_MEASUREMENT_QUALITY_SHIFT);
             
             cur->x = x;

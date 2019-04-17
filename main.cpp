@@ -31,6 +31,7 @@
 #include <signal.h>
 #include <cuda_runtime_api.h>
 #include <cuda.h>
+#include<cuda_profiler_api.h>
 #include "LaserScan.h"
 #include "Map.h"
 #include "CheckpointWriter.h"
@@ -53,6 +54,7 @@ void ctrlc(int)
 
 int main(int argc, const char *argv[])
 {
+    cudaProfilerStart();
     int deviceCount;
     cudaGetDeviceCount(&deviceCount);
     int device;
@@ -76,7 +78,7 @@ int main(int argc, const char *argv[])
     high_resolution_clock::time_point t1, t2;
 
     //TODO: rplidar examples have this set to ~9000 but I've never seen more than ~2000 samples in a single scan, maybe we can reduce this
-    const int scan_buffer_size = 9000;
+    const int scan_buffer_size = 4000;
     TelemetryPoint *h_scan_p = NULL;
 
     //We used Pinned Host Memory because it tends to be 2x faster than pageable host memory when transfering to/from
@@ -85,7 +87,8 @@ int main(int argc, const char *argv[])
 
     Map map(2000,2000, scan_buffer_size);
 
-    while(true)
+    int count = 0;
+    while(count < 10)
     {
         t1 = high_resolution_clock::now();
         int num_scan_samples = laser.scan(h_scan_p, scan_buffer_size);
@@ -94,7 +97,7 @@ int main(int argc, const char *argv[])
 
         t1 = high_resolution_clock::now();
         CheckpointWriter::advanceCheckpoint();
-        CheckpointWriter::checkpoint("scan", 2000,2000, h_scan_p, num_scan_samples);
+        //CheckpointWriter::checkpoint("scan", 2000,2000, h_scan_p, num_scan_samples);
         map.update(100, h_scan_p, num_scan_samples);
         t2 = high_resolution_clock::now();
         auto cp_dur = duration_cast<milliseconds>( t2 - t1 ).count();
@@ -102,11 +105,12 @@ int main(int argc, const char *argv[])
         cout << "Scan Dur: " << scan_dur << " ms" << " CP Dur: " << cp_dur << "ms" << endl;
         if (ctrl_c_pressed)
         {
-            laser.stop();
-            ms.stop();
             break;
         }
 
+        count++;
+
+/*
         int c = getchar();
         if(c == 10){
             //no-op
@@ -123,9 +127,13 @@ int main(int argc, const char *argv[])
         } else {
             printf("Unknown key: %c %d\n",c,c);
         }
+        */
     }
 
+    laser.stop();
+    ms.stop();
     cudaFreeHost(h_scan_p);
+    cudaProfilerStop();
     return 0;
 }
 

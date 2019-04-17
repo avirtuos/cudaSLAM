@@ -8,12 +8,13 @@
 #include "CudaUtils.h"
 #include "CheckpointWriter.h"
 #include "TelemetryPoint.h"
+#include "SimTelemetryPoint.h"
 #include "LocalizedOrigin.h"
 #include "MapPoint.h"
-#include <math.h>
 #include <mutex>          // std::mutex, std::unique_lock
 #include <cuda_runtime_api.h>
 #include <cuda.h>
+#include<cuda_profiler_api.h>
 #include <string.h>
 
 using namespace std;
@@ -38,4 +39,8 @@ private:
     int map_bytes;
     TelemetryPoint *scan_buffer_d;
     int *scan_size_d;
+    SimTelemetryPoint *sim_buffer_d;
+    int *sim_size_d;
+    LocalizedOrigin *result_d;
+    int map_update_dim;
 };

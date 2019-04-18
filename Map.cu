@@ -14,7 +14,7 @@ Map::Map(int width_arg, int height_arg, int scan_buffer_size)
 
     //Allocate sim buffer on device
     int sim_size_h = 360 * scan_buffer_size;
-    const unsigned int sim_bytes = sim_size_h*sizeof(SimTelemetryPoint);
+    const unsigned int sim_bytes = sim_size_h * sizeof(SimTelemetryPoint);
     checkCuda(cudaMalloc((void **)&sim_buffer_d, sim_bytes));
     checkCuda(cudaMalloc((void **)&sim_size_d, sizeof(int)));
     cudaMemcpy(sim_size_d, &sim_size_h, sizeof(int), cudaMemcpyHostToDevice);
@@ -34,7 +34,7 @@ Map::Map(int width_arg, int height_arg, int scan_buffer_size)
 
     map_update_dim = 512;
     const unsigned int n = map_update_dim * map_update_dim;
-    checkCuda(cudaMalloc((void **)&result_d, n*sizeof(LocalizedOrigin)));
+    checkCuda(cudaMalloc((void **)&result_d, n * sizeof(LocalizedOrigin)));
 }
 
 Map::~Map()
@@ -54,37 +54,37 @@ Map::~Map()
 __global__
 void cudeGenerateParticleFilter(SimTelemetryPoint *sim_buffer, int *sim_size, TelemetryPoint *scan_buffer, int *scan_size)
 {
+    extern __shared__ TelemetryPoint scan_buffer_s[];
+
     int sim_num = blockIdx.x * blockDim.x + threadIdx.x;
+    int scan_num = sim_num % *scan_size;
 
-    if(sim_num > 360) {
-        return;
-    }
-
-    int sim_offset = (sim_num * *scan_size);
-    for(int scan_point = 0; scan_point < *scan_size; scan_point++)
+    //populate this scan into shared memory into shared memory
+    if(sim_num < *scan_size)
     {
-        float distance = scan_buffer[scan_point].distance;
-        float angle_radians = scan_buffer[scan_point].angle;
-
-        int pos = sim_offset + scan_point;
-        if(pos >= *sim_size){
-            return;
-        }
-
-        SimTelemetryPoint *sim = sim_buffer + pos;
-        sim->x = roundf(__sinf (sim_num + angle_radians) * distance);
-        sim->y = roundf(__cosf (sim_num + angle_radians) * distance);
+        scan_buffer_s[sim_num] = scan_buffer[sim_num];
     }
+     __syncthreads();
+
+    float distance = scan_buffer_s[scan_num].distance;
+    float angle_num = scan_buffer_s[scan_num].angle + floorf(sim_num / *scan_size);
+
+    sim_buffer[sim_num].x = roundf(__sinf (angle_num) * distance);
+    sim_buffer[sim_num].y = roundf(__cosf (angle_num) * distance);
 }
 
 
+
+//TODO: this needs parrallism, like a map/reduce paradim. There were examples of this in the book where you use nested loops and sync threads.
 __global__
 void cudaLocalizeParticleFilter(LocalizedOrigin *result, int result_size)
 {
     LocalizedOrigin best;
     best.score = -1;
-    for(int i = 0; i < result_size;i++){
-        if(result[i].score > best.score){
+    for(int i = 0; i < result_size; i++)
+    {
+        if(result[i].score > best.score)
+        {
             best.x_offset = result[i].x_offset;
             best.y_offset = result[i].y_offset;
             best.angle_offset = result[i].angle_offset;
@@ -99,13 +99,13 @@ void cudaLocalizeParticleFilter(LocalizedOrigin *result, int result_size)
 __global__
 void cudaRunParticleFilter(int n, LocalizedOrigin *result, SimTelemetryPoint *sim_buffer, int *sim_size, TelemetryPoint *scan_buffer, int *scan_size, MapPoint *map, int *map_width, int *map_height)
 {
+    extern __shared__ SimTelemetryPoint sim_buffer_s[];
     int offset = blockIdx.x * blockDim.x + threadIdx.x;
-    int search_distance = 256;
+    int search_distance = 50;
 
     int x_offset = (-1 * search_distance) + (int)threadIdx.x;
     int y_offset = (-1 * search_distance) + (int)blockIdx.x;
     long max_pos = *map_width * *map_height;
-
 
     if(x_offset > search_distance || y_offset > search_distance)
     {
@@ -129,12 +129,18 @@ void cudaRunParticleFilter(int n, LocalizedOrigin *result, SimTelemetryPoint *si
         int score = 0;
         int scan_point_offset = angle_offset * *scan_size;
 
+        //populate this next andgle into shared memory
+        if(offset < *scan_size)
+        {
+            sim_buffer_s[offset] = sim_buffer[scan_point_offset + offset];
+        }
+        __syncthreads();
+
         for(int scan_point = 0; scan_point < *scan_size; scan_point++)
         {
-            //todo: pre-calculate this
-            int e_scan_point = scan_point_offset + scan_point;
-            int x = x_offset + sim_buffer[e_scan_point].x;
-            int y = y_offset + sim_buffer[e_scan_point].y;
+            //SimTelemetryPoint *scan_point_ptr = sim_buffer_s + scan_point;
+            int x = x_offset + sim_buffer_s[scan_point].x;
+            int y = y_offset + sim_buffer_s[scan_point].y;
 
             int pos = ((e_height + y) * *map_width) + (e_width + x);
 
@@ -143,11 +149,8 @@ void cudaRunParticleFilter(int n, LocalizedOrigin *result, SimTelemetryPoint *si
                 continue;
             }
 
-            MapPoint *map_point = map + pos;
-            if(map_point->occupancy > 0)
-            {
-                score++;
-            }
+            //MapPoint *map_point = map + pos;
+            score += map[pos].occupancy;
         }
 
         if(best.score < score)
@@ -173,16 +176,19 @@ void cudaRunParticleFilter(int n, LocalizedOrigin *result, SimTelemetryPoint *si
 __global__
 void cudaInitMap(TelemetryPoint *scan_buffer, int *scan_size, MapPoint *map, int *map_width, int *map_height)
 {
-    for(int i = 0; i < *scan_size; i++)
+    int offset = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if(offset > *scan_size)
     {
-        TelemetryPoint *cur_point = scan_buffer + i;
-        int pos = ((*map_height / 2 + cur_point->y) * *map_width) + (*map_height / 2 + cur_point->x);
-        MapPoint *cur_map = map + pos;
-        if(cur_map->occupancy < 1000)
-        {
-            cur_map->occupancy++;
-        }
+        return;
     }
+
+    TelemetryPoint *cur_point = scan_buffer + offset;
+    int pos = ((*map_height / 2 + cur_point->y) * *map_width) + (*map_height / 2 + cur_point->x);
+    //printf("Point: x: %d y: %d, a: %.2f p: %d\n", cur_point->x, cur_point->y, cur_point->angle, pos);
+    MapPoint *cur_map = map + pos;
+    cur_map->occupancy = 1;
+
 }
 
 
@@ -196,19 +202,22 @@ TelemetryPoint Map::update(int32_t search_distance, TelemetryPoint scan_data[], 
     const unsigned int bytes = scan_size * sizeof(TelemetryPoint);
     cudaMemcpy(scan_buffer_d, scan_data, bytes, cudaMemcpyHostToDevice);
     cudaMemcpy(scan_size_d, &scan_size, sizeof(int), cudaMemcpyHostToDevice);
-    
+
     if(!map_init)
     {
-        cudaInitMap <<< 1, 1>>>(scan_buffer_d, scan_size_d, map_d, width_d, height_d);
+        cudaInitMap <<< 1 + (scan_size/512), 512>>>(scan_buffer_d, scan_size_d, map_d, width_d, height_d);
         map_init = true;
     }
 
-    cudeGenerateParticleFilter<<<1,512>>>(sim_buffer_d, sim_size_d, scan_buffer_d, scan_size_d);
-    cudaRunParticleFilter <<<map_update_dim, map_update_dim>>>(map_update_dim*map_update_dim, result_d, sim_buffer_d, sim_size_d, scan_buffer_d, scan_size_d, map_d, width_d, height_d);
-    cudaLocalizeParticleFilter<<<1,1>>>(result_d,map_update_dim*map_update_dim);
+    cudeGenerateParticleFilter <<< scan_size*360/512, 512, scan_size *sizeof(TelemetryPoint)>>>(sim_buffer_d, sim_size_d, scan_buffer_d, scan_size_d);
+    cudaProfilerStart();
+    cudaRunParticleFilter <<< map_update_dim, map_update_dim, scan_size *sizeof(SimTelemetryPoint)>>>(map_update_dim * map_update_dim, result_d, sim_buffer_d, sim_size_d, scan_buffer_d, scan_size_d, map_d, width_d, height_d);
+    cudaProfilerStop();
+    cudaLocalizeParticleFilter <<< 1, 1>>>(result_d, map_update_dim * map_update_dim);
+
 
     cudaMemcpy(map_h, map_d, map_bytes, cudaMemcpyDeviceToHost);
-    
+
     checkCuda( cudaEventRecord(stopEvent, 0) );
     checkCuda( cudaEventSynchronize(stopEvent) );
 

@@ -54,15 +54,21 @@ void ctrlc(int)
 
 int main(int argc, const char *argv[])
 {
-    cudaProfilerStart();
     int deviceCount;
     cudaGetDeviceCount(&deviceCount);
     int device;
-    for (device = 0; device < deviceCount; ++device) {
-     cudaDeviceProp deviceProp;
-     cudaGetDeviceProperties(&deviceProp, device);
-     printf("Device %d has compute capability %d.%d.\n",
-     device, deviceProp.major, deviceProp.minor);
+    for (device = 0; device < deviceCount; ++device)
+    {
+        cudaDeviceProp deviceProp;
+        cudaGetDeviceProperties(&deviceProp, device);
+        printf("Device %d has compute capability %d.%d.\n", device, deviceProp.major, deviceProp.minor);
+        printf("  Device name: %s\n", deviceProp.name);
+        printf("  Memory Clock Rate (KHz): %d\n", deviceProp.memoryClockRate);
+        printf("  Memory Bus Width (bits): %d\n", deviceProp.memoryBusWidth);
+        printf("  Peak Memory Bandwidth (GB/s): %f\n\n", 2.0 * deviceProp.memoryClockRate * (deviceProp.memoryBusWidth / 8) / 1.0e6);
+        printf("  Max Shared Mem Bytes Per-Block: %lu\n\n", deviceProp.sharedMemPerBlock);
+        printf("  Max Threads Per-Block: %d\n\n", deviceProp.maxThreadsPerBlock);
+        printf("  Warp Size: %d\n\n", deviceProp.warpSize);
     }
 
     const char *com_path = argv[1];
@@ -78,14 +84,14 @@ int main(int argc, const char *argv[])
     high_resolution_clock::time_point t1, t2;
 
     //TODO: rplidar examples have this set to ~9000 but I've never seen more than ~2000 samples in a single scan, maybe we can reduce this
-    const int scan_buffer_size = 4000;
+    const int scan_buffer_size = 3000;
     TelemetryPoint *h_scan_p = NULL;
 
     //We used Pinned Host Memory because it tends to be 2x faster than pageable host memory when transfering to/from
     //source: https://devblogs.nvidia.com/how-optimize-data-transfers-cuda-cc/
-    checkCuda(cudaMallocHost((void**)&h_scan_p, scan_buffer_size * sizeof(TelemetryPoint)));
+    checkCuda(cudaMallocHost((void **)&h_scan_p, scan_buffer_size * sizeof(TelemetryPoint)));
 
-    Map map(2000,2000, scan_buffer_size);
+    Map map(6000, 6000, scan_buffer_size);
 
     int count = 0;
     while(count < 10)
@@ -110,30 +116,29 @@ int main(int argc, const char *argv[])
 
         count++;
 
-/*
-        int c = getchar();
-        if(c == 10){
-            //no-op
-        } else if(c == 32){
-            ms.stop();
-        } else if(c == 119){
-            ms.forward();
-        } else if(c == 115){
-            ms.backward();
-        } else if(c == 97){
-            ms.left();
-        } else if(c == 100){
-            ms.right();
-        } else {
-            printf("Unknown key: %c %d\n",c,c);
-        }
-        */
+        /*
+                int c = getchar();
+                if(c == 10){
+                    //no-op
+                } else if(c == 32){
+                    ms.stop();
+                } else if(c == 119){
+                    ms.forward();
+                } else if(c == 115){
+                    ms.backward();
+                } else if(c == 97){
+                    ms.left();
+                } else if(c == 100){
+                    ms.right();
+                } else {
+                    printf("Unknown key: %c %d\n",c,c);
+                }
+                */
     }
 
     laser.stop();
     ms.stop();
     cudaFreeHost(h_scan_p);
-    cudaProfilerStop();
     return 0;
 }
 

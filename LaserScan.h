@@ -21,12 +21,12 @@ public:
     bool start();
     bool stop();
     bool connect();
-    TelemetryPoint* scan();
+    TelemetryPoint *scan();
 
 
 private:
-	bool checkRPLIDARHealth(RPlidarDriver *drv);
-	float getAngle(const rplidar_response_measurement_node_hq_t& node);
+    bool checkRPLIDARHealth(RPlidarDriver *drv);
+    float getAngle(const rplidar_response_measurement_node_hq_t &node);
     bool is_connected;
     const char *com_port;
     _u32 baudrate;
@@ -55,27 +55,35 @@ int LaserScan::scan(TelemetryPoint result_buffer[], const int buffer_length)
 {
     int result_size = 0;
     TelemetryPoint *cur = result_buffer;
-	u_result op_result = drv->grabScanDataHq(nodes, node_count);
+    u_result op_result = drv->grabScanDataHq(nodes, node_count);
     if (IS_OK(op_result))
     {
         drv->ascendScanData(nodes, node_count);
 
         for (int pos = 0; pos < (int)node_count && result_size < buffer_length; ++pos)
         {
-            float distance = (nodes[pos].dist_mm_q2 / 4.0f)/10;
-            float angle = (getAngle(nodes[pos])* 3.14159265 / 180);
-            int x = roundf(sin (angle) * distance);
-            int y = roundf(cos (angle) * distance);
             uint32_t quality = round(nodes[pos].quality >> RPLIDAR_RESP_MEASUREMENT_QUALITY_SHIFT);
-            
-            cur->x = x;
-            cur->y = y;
-            cur->quality = quality;
-            cur->distance = distance;
-            cur->angle = angle;
+            if(quality > 0)
+            {
+                //convert to centi-meters by dividing by 10, millimeter resolution isn't useful
+                float distance = (nodes[pos].dist_mm_q2 / 4.0f)/10;
+                float angle = (getAngle(nodes[pos]) * 3.14159265 / 180);
+                int x = roundf(sin (angle) * distance);
+                int y = roundf(cos (angle) * distance);
 
-            result_size++;
-            cur = result_buffer+result_size;
+                //dedup points that are essentailly identical after we converted to centimeters, this reduces calculation costs
+                //later and allows fo even naive scoring algos to work well without worrying about deduping.
+                if(result_size < 1 || result_buffer[result_size-1].x != x || result_buffer[result_size-1].y != y){
+                    cur->x = x;
+                    cur->y = y;
+                    cur->quality = quality;
+                    cur->distance = distance;
+                    cur->angle = angle;
+
+                    result_size++;
+                    cur = result_buffer + result_size;
+                }
+            }
         }
     }
 
@@ -97,7 +105,7 @@ bool LaserScan::stop()
 
 bool LaserScan::start()
 {
-	u_result op_result;
+    u_result op_result;
     rplidar_response_device_info_t devinfo;
 
     if(!drv)
@@ -174,7 +182,7 @@ bool LaserScan::checkRPLIDARHealth(RPlidarDriver *drv)
 }
 
 
-float LaserScan::getAngle(const rplidar_response_measurement_node_hq_t& node)
+float LaserScan::getAngle(const rplidar_response_measurement_node_hq_t &node)
 {
     return node.angle_z_q14 * 90.f / 16384.f;
 }

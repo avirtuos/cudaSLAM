@@ -45,7 +45,17 @@ void CheckpointWriter::checkpoint(const string prefix, int32_t width, int32_t he
 		if(map[i].occupancy > 0) {
 			int x = i % width;
 			int y = height - ((i - x)/height);
-			addScanData(pixels, width, height, x, y, 255, 0 ,0 , 255);
+			int r = 0;
+			int g = 0;
+			int b = 0;
+			if(map[i].occupancy > 200){
+				r = map[i].occupancy;
+			} else if (map[i].occupancy > 100){
+				g = map[i].occupancy;
+			} else {
+				b = map[i].occupancy;
+			}
+			addScanData(pixels, width, height, x, y, 255, r ,g , b, 6);
 		}
 	}
 
@@ -53,7 +63,7 @@ void CheckpointWriter::checkpoint(const string prefix, int32_t width, int32_t he
 		addScanData(pixels, width, height, width/2 + scan_data[i].x/scale_factor, height/2 + (-1 * scan_data[i].y/scale_factor), 0, 0 ,255 , scan_data[i].quality);
 	}
 
-	addScanData(pixels, width, height, width/2, height/2, 0, 255 ,0 , 255);
+	addScanData(pixels, width, height, width/2, height/2, 0, 255 ,0 , 255, 4);
 
 	char buffer [20];	
 	sprintf (buffer, "map_%s_%d_%d.jpg",prefix.c_str(), _checkpoint_num, scan_size);
@@ -66,8 +76,7 @@ void CheckpointWriter::advanceCheckpoint(){
 	_checkpoint_num++;
 }
 
-void CheckpointWriter::addScanData(unsigned char *pixels, int width, int height, int x, int y, int r, int g, int b, int quality){
-	int pad = 4;
+void CheckpointWriter::addScanData(unsigned char *pixels, int width, int height, int x, int y, int r, int g, int b, int quality,int pad = 4){
 	for(int yp = -pad; yp < pad; yp++) {
 		for(int xp = -pad; xp < pad; xp++) {
 			int pixel_num = (((y+yp)*width) + (x+xp))*channels;

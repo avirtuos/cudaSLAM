@@ -27,7 +27,7 @@ private:
     static ofstream jpeg;
     static const int channels = 3;
     static void writeJpegByte(unsigned char oneByte);
-    static void addScanData(unsigned char *pixels, int width, int height, int x, int y, int r, int g, int b, int quality);
+    static void addScanData(unsigned char *pixels, int width, int height, int x, int y, int r, int g, int b, int quality, int pad);
 };
 
 #endif

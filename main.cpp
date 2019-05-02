@@ -73,6 +73,12 @@ int main(int argc, const char *argv[])
 
     const char *com_path = argv[1];
     const _u32 com_baudrate = strtoul(argv[2], NULL, 10);
+    
+    int search_distance = 100;
+    if(argc > 3){
+        search_distance = strtoul(argv[3], NULL, 10);
+    }
+    printf("SLAM search distance is %d cm\n", search_distance*10);
 
     char dest[18] = "00:1B:10:80:13:ED";
     MotionSystem ms(dest);
@@ -103,12 +109,12 @@ int main(int argc, const char *argv[])
 
         t1 = high_resolution_clock::now();
         CheckpointWriter::advanceCheckpoint();
-        //CheckpointWriter::checkpoint("scan", 2000,2000, h_scan_p, num_scan_samples);
-        map.update(100, h_scan_p, num_scan_samples);
+        CheckpointWriter::checkpoint("scan", 2000,2000, h_scan_p, num_scan_samples);
+        map.update(search_distance, h_scan_p, num_scan_samples);
         t2 = high_resolution_clock::now();
         auto cp_dur = duration_cast<milliseconds>( t2 - t1 ).count();
 
-        cout << "Scan Dur: " << scan_dur << " ms" << " CP Dur: " << cp_dur << "ms" << endl;
+        cout << "Scan Dur: " << scan_dur << " ms" << " SLAM Dur: " << cp_dur << "ms " <<  " with search area of " << (search_distance*search_distance)/(100*100) << " meters" << endl;
         if (ctrl_c_pressed)
         {
             break;

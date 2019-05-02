@@ -43,4 +43,7 @@ private:
     int *sim_size_d;
     LocalizedOrigin *result_d;
     int map_update_dim;
+    LocalizedOrigin *localized_result_d;
+    LocalizedOrigin *localized_result_h;
+    int localized_size;
 };

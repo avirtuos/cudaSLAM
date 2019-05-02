@@ -35,6 +35,10 @@ Map::Map(int width_arg, int height_arg, int scan_buffer_size)
     map_update_dim = 512;
     const unsigned int n = map_update_dim * map_update_dim;
     checkCuda(cudaMalloc((void **)&result_d, n * sizeof(LocalizedOrigin)));
+
+    localized_size = 10000;
+    checkCuda(cudaMallocHost((void **)&localized_result_h, localized_size * sizeof(LocalizedOrigin)));
+    checkCuda(cudaMalloc((void **)&localized_result_d, localized_size * sizeof(LocalizedOrigin)));
 }
 
 Map::~Map()
@@ -48,6 +52,8 @@ Map::~Map()
     cudaFree(sim_buffer_d);
     cudaFree(sim_size_d);
     cudaFree(result_d);
+    cudaFreeHost(localized_result_h);
+    cudaFree(localized_result_d);
 }
 
 
@@ -85,7 +91,7 @@ void cudeGenerateParticleFilter(SimTelemetryPoint *sim_buffer, int *sim_size, Te
 
 //TODO: this needs parrallism, like a map/reduce paradim. There were examples of this in the book where you use nested loops and sync threads.
 __global__
-void cudaLocalizeParticleFilter(LocalizedOrigin *result, int result_size)
+void cudaLocalizeParticleFilter_slow(LocalizedOrigin *result, int result_size)
 {
     LocalizedOrigin best;
     best.score = -1;
@@ -103,6 +109,50 @@ void cudaLocalizeParticleFilter(LocalizedOrigin *result, int result_size)
     printf("BEST: x: %d  y: %d  a: %.2f  s: %d \n", best.x_offset, best.y_offset, best.angle_offset, best.score);
 }
 
+//TODO: this needs parrallism, like a map/reduce paradim. There were examples of this in the book where you use nested loops and sync threads.
+__global__
+void cudaLocalizeParticleFilter(LocalizedOrigin *output, int max_output_size, LocalizedOrigin *input, int input_size)
+{
+    extern __shared__ LocalizedOrigin localization[];
+
+    if(blockDim.x >= max_output_size ||  gridDim.x >= max_output_size ){
+        //kernel config exceeds buffer sizes
+        if(blockIdx.x * blockDim.x + threadIdx.x == 0) {
+            printf("Exiting due to insufficient buffer size");
+        }
+        return;
+    }
+
+    int tid = threadIdx.x;
+    int offset = blockIdx.x * blockDim.x + threadIdx.x;
+
+    LocalizedOrigin best;
+    best.score = -1;
+
+    //do the first round.
+    int increment = gridDim.x * blockDim.x;
+    for(int i = offset; i < input_size; i += increment)
+    {
+        if(input[i].score > best.score)
+        {
+            best = input[i];
+        }
+    }
+
+    localization[tid] = best;
+    __syncthreads();
+
+    for (unsigned int s=blockDim.x/2; s>0; s>>=1) {
+        if (tid < s && localization[tid].score < localization[tid+s].score) {
+            localization[tid] = localization[tid+s];
+        }
+        __syncthreads();
+    }
+
+    if (tid == 0) output[blockIdx.x] = localization[0];
+}
+
+
 //TODO: There is opportunity to speed this up using hints from odometry or even just simple distance traveled estimates.
 __global__
 void cudaRunParticleFilter(int n, LocalizedOrigin *result, SimTelemetryPoint *sim_buffer, int *sim_size, TelemetryPoint *scan_buffer, int *scan_size, MapPoint *map, int *map_width, int *map_height)
@@ -110,7 +160,7 @@ void cudaRunParticleFilter(int n, LocalizedOrigin *result, SimTelemetryPoint *si
     extern __shared__ SimTelemetryPoint sim_buffer_s[];
     int offset = blockIdx.x * blockDim.x + threadIdx.x;
 
-    int search_distance = 50;
+    int search_distance = 100;
 
     int x_offset = (-1 * search_distance) + offset % (search_distance * 2);
     int y_offset = (-1 * search_distance) + floorf(offset / (search_distance * 2));
@@ -185,7 +235,8 @@ void cudaUpdateMap(TelemetryPoint *scan_buffer, int *scan_size, MapPoint *map, i
     int map_size = *map_width * *map_height;
     for(int i = offset; i < map_size; i += gridDim.x * blockDim.x)
     {
-        if(map[i].occupancy > 0){
+        if(map[i].occupancy > 0)
+        {
             map[i].occupancy -= 1;
         }
     }
@@ -206,7 +257,8 @@ void cudaUpdateMap(TelemetryPoint *scan_buffer, int *scan_size, MapPoint *map, i
 
     //printf("Point: x: %d y: %d, a: %.2f p: %d\n", cur_point->x, cur_point->y, cur_point->angle, pos);
     MapPoint *cur_map = map + pos;
-    if(cur_map->occupancy < 200){
+    if(cur_map->occupancy < 200)
+    {
         cur_map->occupancy += 10;
     }
     //printf("MAP: o: %d p: %d - x: %d. y: %d a:%.2f, q: %d\n", offset, pos, cur_point->x, cur_point->y, cur_point->angle, cur_point->quality);
@@ -233,8 +285,22 @@ TelemetryPoint Map::update(int32_t search_distance, TelemetryPoint scan_data[], 
     cudaDeviceSynchronize();
     cudaRunParticleFilter <<< 20, 512, scan_size *sizeof(SimTelemetryPoint)>>>(map_update_dim * map_update_dim, result_d, sim_buffer_d, sim_size_d, scan_buffer_d, scan_size_d, map_d, width_d, height_d);
     cudaDeviceSynchronize();
-    cudaLocalizeParticleFilter <<< 1, 1>>>(result_d, map_update_dim * map_update_dim);
+    //shared memory must be >= threads per block
+    int num_localization_blocks = 32;
+    cudaLocalizeParticleFilter <<< num_localization_blocks, 128, 128*sizeof(LocalizedOrigin)>>>(localized_result_d, localized_size, result_d, map_update_dim * map_update_dim);
+    cudaLocalizeParticleFilter_slow <<< 1, 1>>>(result_d, map_update_dim * map_update_dim);
     cudaDeviceSynchronize();
+
+    cudaMemcpy(localized_result_h, localized_result_d, localized_size*sizeof(LocalizedOrigin), cudaMemcpyDeviceToHost);
+
+    LocalizedOrigin best;
+    best.score = -1;
+    for(int i = 0; i < num_localization_blocks; i++){
+        if(localized_result_h[i].score > best.score){
+            best = localized_result_h[i];
+        }
+    }
+    printf("BEST-FAST: x: %d  y: %d  a: %.2f  s: %d\n", best.x_offset, best.y_offset, best.angle_offset, best.score);
 
     cudaMemcpy(map_h, map_d, map_bytes, cudaMemcpyDeviceToHost);
 

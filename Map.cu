@@ -238,9 +238,12 @@ void cudaUpdateMap(TelemetryPoint *scan_buffer, int *scan_size, MapPoint *map, i
     {
         if(map[i].occupancy > 0)
         {
+            //printf("MAP: i: %d, s: %d \n", map[i].occupancy);
             map[i].occupancy -= 1;
         }
     }
+
+    //synchronizing across blocks would be better - TODO: get grid_group and sync working. Was facing linking errors with this.
     __syncthreads();
 
     if(offset >= *scan_size)
@@ -258,9 +261,9 @@ void cudaUpdateMap(TelemetryPoint *scan_buffer, int *scan_size, MapPoint *map, i
 
     //printf("Point: x: %d y: %d, a: %.2f p: %d\n", cur_point->x, cur_point->y, cur_point->angle, pos);
     MapPoint *cur_map = map + pos;
-    if(cur_map->occupancy < 200)
+    if(cur_map->occupancy < 225)
     {
-        cur_map->occupancy += 10;
+        cur_map->occupancy += 25;
     }
     //printf("MAP: o: %d p: %d - x: %d. y: %d a:%.2f, q: %d\n", offset, pos, cur_point->x, cur_point->y, cur_point->angle, cur_point->quality);
 }
@@ -291,6 +294,7 @@ TelemetryPoint Map::update(int32_t search_distance, TelemetryPoint scan_data[], 
     cudaDeviceSynchronize();
 
     cudaMemcpy(localized_result_h, localized_result_d, localized_size*sizeof(LocalizedOrigin), cudaMemcpyDeviceToHost);
+    cudaDeviceSynchronize();
 
     LocalizedOrigin best;
     best.score = -1;
@@ -301,7 +305,7 @@ TelemetryPoint Map::update(int32_t search_distance, TelemetryPoint scan_data[], 
     }
     printf("BEST-FAST: x: %d  y: %d  a: %.2f  s: %d\n", best.x_offset, best.y_offset, best.angle_offset, best.score);
 
-    cudaMemcpy(map_h, map_d, map_bytes, cudaMemcpyDeviceToHost);
+    checkCuda( cudaMemcpy(map_h, map_d, map_bytes, cudaMemcpyDeviceToHost));
 
     checkCuda( cudaEventRecord(stopEvent, 0) );
     checkCuda( cudaEventSynchronize(stopEvent) );
@@ -312,8 +316,9 @@ TelemetryPoint Map::update(int32_t search_distance, TelemetryPoint scan_data[], 
     checkCuda( cudaEventDestroy(stopEvent) );
 
     printf("Map::update processed %d points and took %.2f ms\n", scan_size, time);
+    cudaDeviceSynchronize();
 
-    CheckpointWriter::checkpoint("cuda", 2000, 2000, scan_data, scan_size, map_h);
+    CheckpointWriter::checkpoint("cuda", width, height, scan_data, scan_size, map_h, &best);
 
     cudaProfilerStop();
     return TelemetryPoint{0, 0, 0, 0, 0};

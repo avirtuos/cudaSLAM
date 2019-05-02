@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include "toojpeg.h"
 #include "TelemetryPoint.h"
+#include "LocalizedOrigin.h"
 #include "MapPoint.h"
 #include <math.h>
 #include <mutex>          // std::mutex, std::unique_lock
@@ -18,7 +19,7 @@ class CheckpointWriter
 
 public:
     static void checkpoint(const string prefix,int32_t width, int32_t height, TelemetryPoint scan_data[], int scan_size);
-    static void checkpoint(const string prefix, int32_t width, int32_t height, TelemetryPoint scan_data[], int scan_size, MapPoint map[]);
+    static void checkpoint(const string prefix, int32_t width, int32_t height, TelemetryPoint scan_data[], int scan_size, MapPoint map[], LocalizedOrigin *location);
     static void advanceCheckpoint();
 
 private:
@@ -27,7 +28,7 @@ private:
     static ofstream jpeg;
     static const int channels = 3;
     static void writeJpegByte(unsigned char oneByte);
-    static void addScanData(unsigned char *pixels, int width, int height, int x, int y, int r, int g, int b, int quality, int pad);
+    static void addScanData(unsigned char *pixels, int width, int height, int x, int y, int r, int g, int b, int quality, int pad = 4);
 };
 
 #endif

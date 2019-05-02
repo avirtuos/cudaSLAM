@@ -71,8 +71,18 @@ int main(int argc, const char *argv[])
         printf("  Warp Size: %d\n\n", deviceProp.warpSize);
     }
 
-    const char *com_path = argv[1];
-    const _u32 com_baudrate = strtoul(argv[2], NULL, 10);
+    const char *default_com_path = "/dev/ttyUSB0";
+    char *com_path = (char*)default_com_path;
+    if(argc > 1){
+        com_path = (char*)argv[1];
+    }
+    printf("LiDAR COM Port %s \n", com_path);
+
+    _u32 com_baudrate = 256000;
+    if(argc > 1){
+        com_baudrate = strtoul(argv[2], NULL, 10);
+    }
+    printf("LiDAR BAUD Rate %ud \n", com_baudrate);
     
     int search_distance = 100;
     if(argc > 3){
@@ -80,6 +90,13 @@ int main(int argc, const char *argv[])
     }
     printf("SLAM search distance is %d cm\n", search_distance*10);
 
+    int dir = 0;
+    if(argc > 4){
+        dir = strtoul(argv[4], NULL, 10);
+        printf("DIR %d \n", dir);
+    }
+
+    //blue tooth address of arduino (or other) motion control system
     char dest[18] = "00:1B:10:80:13:ED";
     MotionSystem ms(dest);
 
@@ -97,7 +114,8 @@ int main(int argc, const char *argv[])
     //source: https://devblogs.nvidia.com/how-optimize-data-transfers-cuda-cc/
     checkCuda(cudaMallocHost((void **)&h_scan_p, scan_buffer_size * sizeof(TelemetryPoint)));
 
-    Map map(6000, 6000, scan_buffer_size);
+    int map_size = 3000;
+    Map map(map_size, map_size, scan_buffer_size);
 
     int count = 0;
     while(count < 10)
@@ -109,7 +127,7 @@ int main(int argc, const char *argv[])
 
         t1 = high_resolution_clock::now();
         CheckpointWriter::advanceCheckpoint();
-        CheckpointWriter::checkpoint("scan", 2000,2000, h_scan_p, num_scan_samples);
+        CheckpointWriter::checkpoint("scan", map_size,map_size, h_scan_p, num_scan_samples);
         map.update(search_distance, h_scan_p, num_scan_samples);
         t2 = high_resolution_clock::now();
         auto cp_dur = duration_cast<milliseconds>( t2 - t1 ).count();
@@ -122,6 +140,11 @@ int main(int argc, const char *argv[])
 
         count++;
 
+        if(dir == 1){
+            ms.forward();
+        } else if(dir == 2) {
+            ms.backward();
+        }
         /*
                 int c = getchar();
                 if(c == 10){

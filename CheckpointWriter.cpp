@@ -48,22 +48,24 @@ void CheckpointWriter::checkpoint(const string prefix, int32_t width, int32_t he
 			int r = 0;
 			int g = 0;
 			int b = 0;
-			if(map[i].occupancy > 200){
-				r = map[i].occupancy;
-			} else if (map[i].occupancy > 100){
-				g = map[i].occupancy;
+			if(map[i].occupancy > 80){
+				r = 180 + map[i].occupancy;
+			} else if(map[i].occupancy > 40){
+				r = 120 + map[i].occupancy;
+			} else if (map[i].occupancy > 20){
+				g = 80 + map[i].occupancy;
 			} else {
-				b = map[i].occupancy;
+				b = 40;
 			}
 			addScanData(pixels, width, height, x, y, r, g ,b , 255, 8);
 		}
 	}
 
 	for(int i = 0; i < scan_size; i++){
-		//addScanData(pixels, width, height, width/2 + scan_data[i].x/scale_factor, height/2 + (-1 * scan_data[i].y/scale_factor), 155, 155 ,0 , 255);
+		addScanData(pixels, width, height, width/2 + scan_data[i].x/scale_factor + location->x_offset, height/2 + (-1 * (scan_data[i].y/scale_factor+ location->y_offset)), 155, 155 ,0 , 255);
 	}
 
-	addScanData(pixels, width, height, width/2 + location->x_offset, height/2 + location->y_offset, 0, 255 ,0 , 255, 4);
+	addScanData(pixels, width, height, width/2 + location->x_offset, height/2 - location->y_offset, 0, 255 ,0 , 255, 4);
 
 	char buffer [20];	
 	sprintf (buffer, "map_%s_%d_%d.jpg",prefix.c_str(), _checkpoint_num, scan_size);

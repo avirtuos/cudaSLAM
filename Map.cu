@@ -229,7 +229,7 @@ void cudaRunParticleFilter(int search_distance, LocalizedOrigin *result, SimTele
 //it needs more thinking. I like the idea of the map being fully mutable, not just additive which is what
 //I've seen from other SLAM impls.
 __global__
-void cudaUpdateMap(TelemetryPoint *scan_buffer, int *scan_size, MapPoint *map, int *map_width, int *map_height)
+void cudaUpdateMap(TelemetryPoint *scan_buffer, int *scan_size, MapPoint *map, int *map_width, int *map_height, LocalizedOrigin origin)
 {
     int offset = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -252,7 +252,13 @@ void cudaUpdateMap(TelemetryPoint *scan_buffer, int *scan_size, MapPoint *map, i
     }
 
     TelemetryPoint *cur_point = scan_buffer + offset;
-    int pos = ((*map_height / 2 + cur_point->y) * *map_width) + (*map_height / 2 + cur_point->x);
+    float distance = cur_point->distance;
+    float angle_num = cur_point->angle + origin.angle_offset;
+
+    int x = roundf(__sinf (angle_num) * distance) + origin.x_offset;
+    int y = roundf(__cosf (angle_num) * distance) + origin.y_offset;
+    
+    int pos = ((*map_height / 2 + y) * *map_width) + (*map_height / 2 + x);
 
     if(pos > map_size)
     {
@@ -282,8 +288,6 @@ TelemetryPoint Map::update(int32_t search_distance, TelemetryPoint scan_data[], 
     cudaMemcpy(scan_buffer_d, scan_data, bytes, cudaMemcpyHostToDevice);
     cudaMemcpy(scan_size_d, &scan_size, sizeof(int), cudaMemcpyHostToDevice);
 
-    cudaUpdateMap <<< 32, 256 >>> (scan_buffer_d, scan_size_d, map_d, width_d, height_d);
-    cudaDeviceSynchronize();
     cudeGenerateParticleFilter <<< scan_size * 360 / 1024, 1024, scan_size *sizeof(TelemetryPoint) >>> (sim_buffer_d, sim_size_d, scan_buffer_d, scan_size_d);
     cudaDeviceSynchronize();
     cudaRunParticleFilter <<< (search_distance*search_distance)/512 + 1, 512, scan_size *sizeof(SimTelemetryPoint)>>>(search_distance, result_d, sim_buffer_d, sim_size_d, scan_buffer_d, scan_size_d, map_d, width_d, height_d);
@@ -297,14 +301,21 @@ TelemetryPoint Map::update(int32_t search_distance, TelemetryPoint scan_data[], 
     cudaDeviceSynchronize();
 
     LocalizedOrigin best;
-    best.score = -1;
+    best.score = 0;
+    best.x_offset = 0;
+    best.y_offset = 0;
+    best.angle_offset = 0;
     for(int i = 0; i < num_localization_blocks; i++){
         if(localized_result_h[i].score > best.score){
             best = localized_result_h[i];
         }
     }
+
     printf("BEST-FAST: x: %d  y: %d  a: %.2f  s: %d\n", best.x_offset, best.y_offset, best.angle_offset, best.score);
 
+
+    cudaUpdateMap <<< 32, 256 >>> (scan_buffer_d, scan_size_d, map_d, width_d, height_d, best);
+    cudaDeviceSynchronize();
     checkCuda( cudaMemcpy(map_h, map_d, map_bytes, cudaMemcpyDeviceToHost));
 
     checkCuda( cudaEventRecord(stopEvent, 0) );

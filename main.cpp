@@ -114,7 +114,7 @@ int main(int argc, const char *argv[])
     //source: https://devblogs.nvidia.com/how-optimize-data-transfers-cuda-cc/
     checkCuda(cudaMallocHost((void **)&h_scan_p, scan_buffer_size * sizeof(TelemetryPoint)));
 
-    int map_size = 3000;
+    int map_size = 2000;
     Map map(map_size, map_size, scan_buffer_size);
 
     int count = 0;

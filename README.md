@@ -63,7 +63,7 @@ This section is mostly a place holder for now but I'll use it to keep track of n
                     0.00%  15.138us         2  7.5690us  4.7370us  10.401us  cuDeviceGet
                     0.00%  7.9690us         1  7.9690us  7.9690us  7.9690us  cuDeviceGetUuid
                     0.00%  4.5760us         1  4.5760us  4.5760us  4.5760us  cuDeviceGetName
-                    ```
+```
 
 ## Notes
 

@@ -62,7 +62,7 @@ void cudeGenerateParticleFilter(SimTelemetryPoint *sim_buffer, int *sim_size, Te
 {
     extern __shared__ TelemetryPoint scan_buffer_s[];
 
-    for(int i = threadIdx.x; i < *scan_size; i += blockDim.x)
+    for(int16_t i = threadIdx.x; i < *scan_size; i += blockDim.x)
     {
         scan_buffer_s[i] = scan_buffer[i];
     }
@@ -160,14 +160,17 @@ void cudaRunParticleFilter(int search_distance, LocalizedOrigin *result, SimTele
     extern __shared__ SimTelemetryPoint sim_buffer_s[];
     int offset = blockIdx.x * blockDim.x + threadIdx.x;
 
-    int e_search_distance = search_distance / 2;
-    int x_offset = (-1 * e_search_distance) + offset % (e_search_distance * 2);
-    int y_offset = (-1 * e_search_distance) + floorf(offset / (e_search_distance * 2));
+    uint16_t e_search_distance = search_distance / 2;
+    int16_t x_offset = (-1 * e_search_distance) + offset % (e_search_distance * 2);
+    int16_t y_offset = (-1 * e_search_distance) + floorf(offset / (e_search_distance * 2));
 
-    long max_pos = *map_width * *map_height;
+    //int max_pos = *map_width * *map_height;
 
     int e_width = (*map_width / 2);
     int e_height = (*map_height / 2);
+
+    int ne_width = -1*e_width;
+    int ne_height = -1*e_height;
 
     LocalizedOrigin best;
     best.score = 0;
@@ -176,7 +179,7 @@ void cudaRunParticleFilter(int search_distance, LocalizedOrigin *result, SimTele
     for(int angle_offset = 0; angle_offset < 360; angle_offset++)
     {
         //For each point see if we have a hit
-        int score = 0;
+        uint16_t score = 0;
         int scan_point_offset = angle_offset * *scan_size;
 
         for(int i = threadIdx.x; i < *scan_size; i += blockDim.x)
@@ -186,23 +189,23 @@ void cudaRunParticleFilter(int search_distance, LocalizedOrigin *result, SimTele
 
         __syncthreads();
 
-        if(x_offset < search_distance && y_offset < search_distance)
+        if(x_offset < e_search_distance && y_offset < e_search_distance)
         {
-            for(int scan_point = 0; scan_point < *scan_size; scan_point++)
+            for(uint16_t scan_point = 0; scan_point < *scan_size; scan_point++)
             {
                 //SimTelemetryPoint *scan_point_ptr = sim_buffer_s + scan_point;
-                int x = x_offset + sim_buffer_s[scan_point].x;
-                int y = y_offset + sim_buffer_s[scan_point].y;
+                int16_t x = x_offset + sim_buffer_s[scan_point].x;
+                int16_t y = y_offset + sim_buffer_s[scan_point].y;
 
-                int pos = ((e_height + y) * *map_width) + (e_width + x);
-
-                if(pos < 0 || pos >= max_pos)
+                 if(x >= e_width || x <= ne_width || y >= e_height || y <= ne_height )
                 {
                     continue;
                 }
 
+                int pos = ((e_height + y) * *map_width) + (e_width + x);
+
                 //MapPoint *map_point = map + pos;
-                score += map[pos].occupancy;
+                score += map[pos].occupancy/3;
             }
         }
 
@@ -234,7 +237,7 @@ void cudaUpdateMap(TelemetryPoint *scan_buffer, int *scan_size, MapPoint *map, i
     int offset = blockIdx.x * blockDim.x + threadIdx.x;
 
     int map_size = *map_width * *map_height;
-    for(int i = offset; i < map_size; i += gridDim.x * blockDim.x)
+    /*for(int i = offset; i < map_size; i += gridDim.x * blockDim.x)
     {
         if(map[i].occupancy > 0)
         {
@@ -245,6 +248,7 @@ void cudaUpdateMap(TelemetryPoint *scan_buffer, int *scan_size, MapPoint *map, i
 
     //synchronizing across blocks would be better - TODO: get grid_group and sync working. Was facing linking errors with this.
     __syncthreads();
+    */
 
     if(offset >= *scan_size)
     {
@@ -267,9 +271,9 @@ void cudaUpdateMap(TelemetryPoint *scan_buffer, int *scan_size, MapPoint *map, i
 
     //printf("Point: x: %d y: %d, a: %.2f p: %d\n", cur_point->x, cur_point->y, cur_point->angle, pos);
     MapPoint *cur_map = map + pos;
-    if(cur_map->occupancy < 225)
+    if(cur_map->occupancy < 3)
     {
-        cur_map->occupancy += 25;
+        cur_map->occupancy++;
     }
     //printf("MAP: o: %d p: %d - x: %d. y: %d a:%.2f, q: %d\n", offset, pos, cur_point->x, cur_point->y, cur_point->angle, cur_point->quality);
 }
@@ -312,7 +316,6 @@ TelemetryPoint Map::update(int32_t search_distance, TelemetryPoint scan_data[], 
     }
 
     printf("BEST-FAST: x: %d  y: %d  a: %.2f  s: %d\n", best.x_offset, best.y_offset, best.angle_offset, best.score);
-
 
     cudaUpdateMap <<< 32, 256 >>> (scan_buffer_d, scan_size_d, map_d, width_d, height_d, best);
     cudaDeviceSynchronize();

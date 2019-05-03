@@ -84,7 +84,7 @@ int main(int argc, const char *argv[])
     }
     printf("LiDAR BAUD Rate %ud \n", com_baudrate);
     
-    int search_distance = 100;
+    int search_distance = 50;
     if(argc > 3){
         search_distance = strtoul(argv[3], NULL, 10);
     }
@@ -118,7 +118,7 @@ int main(int argc, const char *argv[])
     Map map(map_size, map_size, scan_buffer_size);
 
     int count = 0;
-    while(count < 10)
+    while(count < 30)
     {
         t1 = high_resolution_clock::now();
         int num_scan_samples = laser.scan(h_scan_p, scan_buffer_size);
@@ -127,7 +127,7 @@ int main(int argc, const char *argv[])
 
         t1 = high_resolution_clock::now();
         CheckpointWriter::advanceCheckpoint();
-        CheckpointWriter::checkpoint("scan", map_size,map_size, h_scan_p, num_scan_samples);
+       // CheckpointWriter::checkpoint("scan", map_size,map_size, h_scan_p, num_scan_samples);
         map.update(search_distance, h_scan_p, num_scan_samples);
         t2 = high_resolution_clock::now();
         auto cp_dur = duration_cast<milliseconds>( t2 - t1 ).count();
@@ -140,10 +140,12 @@ int main(int argc, const char *argv[])
 
         count++;
 
-        if(dir == 1){
-            ms.forward();
-        } else if(dir == 2) {
-            ms.backward();
+        if(count > 10){
+            if(dir == 1){
+                ms.forward();
+            } else if(dir == 2) {
+                ms.backward();
+            }
         }
         /*
                 int c = getchar();

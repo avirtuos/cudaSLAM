@@ -62,14 +62,14 @@ int LaserScan::scan(TelemetryPoint result_buffer[], const int buffer_length)
 
         for (int pos = 0; pos < (int)node_count && result_size < buffer_length; ++pos)
         {
-            uint32_t quality = round(nodes[pos].quality >> RPLIDAR_RESP_MEASUREMENT_QUALITY_SHIFT);
+            int16_t quality = round(nodes[pos].quality >> RPLIDAR_RESP_MEASUREMENT_QUALITY_SHIFT);
             if(quality > 0)
             {
                 //convert to centi-meters by dividing by 10, millimeter resolution isn't useful
                 float distance = (nodes[pos].dist_mm_q2 / 4.0f)/10;
                 float angle = (getAngle(nodes[pos]) * 3.14159265 / 180);
-                int x = roundf(sin (angle) * distance);
-                int y = roundf(cos (angle) * distance);
+                int16_t x = roundf(sin (angle) * distance);
+                int16_t y = roundf(cos (angle) * distance);
 
                 //dedup points that are essentailly identical after we converted to centimeters, this reduces calculation costs
                 //later and allows fo even naive scoring algos to work well without worrying about deduping.

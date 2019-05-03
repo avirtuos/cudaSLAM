@@ -18,14 +18,14 @@ void CheckpointWriter::checkpoint(const string prefix, int32_t width, int32_t he
 			pixels[i+1] = 255;
 			pixels[i+2] = 255;
 	}
-	char buffer [20];	
+	char buffer [30];	
 
 	for(int i = 0; i < scan_size; i++){
 		addScanData(pixels, width, height, width/2 + scan_data[i].x/scale_factor, height/2 + (-1 * scan_data[i].y/scale_factor), 255, 0 ,0 , scan_data[i].quality);
 	}
 	addScanData(pixels, width, height, width/2, height/2, 0, 255 ,0 , 255);
 
-	sprintf (buffer, "map_%s_%d_%d.jpg",prefix.c_str(), _checkpoint_num, scan_size);
+	sprintf (buffer, "./maps/map_%s_%d_%d.jpg",prefix.c_str(), _checkpoint_num, scan_size);
 	jpeg.open(buffer);
     TooJpeg::writeJpeg(writeJpegByte, pixels, width, height);
 	jpeg.close();
@@ -44,31 +44,33 @@ void CheckpointWriter::checkpoint(const string prefix, int32_t width, int32_t he
 	for(int32_t i = 0; i < height*width; i++){
 		if(map[i].occupancy > 0) {
 			int x = i % width;
-			int y = height - ((i - x)/height);
-			int r = 0;
+			int y = height - ((i - x)/height) - 1;
+
+			int r = 128;
 			int g = 0;
-			int b = 0;
-			if(map[i].occupancy > 80){
-				r = 180 + map[i].occupancy;
-			} else if(map[i].occupancy > 40){
-				r = 120 + map[i].occupancy;
-			} else if (map[i].occupancy > 20){
-				g = 80 + map[i].occupancy;
-			} else {
-				b = 40;
+			int b = 128;
+
+			if(map[i].occupancy == 2){
+				r = 128;
+				g = 128;
+			} else if(map[i].occupancy >2){
+				r = 128;
+				g = 128;
+				b = 128;
 			}
+			
 			addScanData(pixels, width, height, x, y, r, g ,b , 255, 8);
 		}
 	}
 
 	for(int i = 0; i < scan_size; i++){
-		addScanData(pixels, width, height, width/2 + scan_data[i].x/scale_factor + location->x_offset, height/2 + (-1 * (scan_data[i].y/scale_factor+ location->y_offset)), 155, 155 ,0 , 255);
+		addScanData(pixels, width, height, width/2 + scan_data[i].x/scale_factor + location->x_offset, height/2 + (-1 * (scan_data[i].y/scale_factor+ location->y_offset)), 0, 0 ,255 , 255);
 	}
 
-	addScanData(pixels, width, height, width/2 + location->x_offset, height/2 - location->y_offset, 0, 255 ,0 , 255, 4);
+	addScanData(pixels, width, height, width/2 + location->x_offset, height/2 - location->y_offset, 255, 0 ,0 , 255, 10);
 
-	char buffer [20];	
-	sprintf (buffer, "map_%s_%d_%d.jpg",prefix.c_str(), _checkpoint_num, scan_size);
+	char buffer [30];	
+	sprintf (buffer, "./maps/map_%s_%d_%d.jpg",prefix.c_str(), _checkpoint_num, scan_size);
 	jpeg.open(buffer);
     TooJpeg::writeJpeg(writeJpegByte, pixels, width, height);
 	jpeg.close();
@@ -82,6 +84,10 @@ void CheckpointWriter::addScanData(unsigned char *pixels, int width, int height,
 	for(int yp = -pad; yp < pad; yp++) {
 		for(int xp = -pad; xp < pad; xp++) {
 			int pixel_num = (((y+yp)*width) + (x+xp))*channels;
+			if(y+yp >= height || y+yp < 0 || x+xp >= width || x+xp < 0){
+				continue;
+			}
+			
 			pixels[pixel_num] = r;
 			pixels[pixel_num+1] = b;
 			pixels[pixel_num+2] = g;

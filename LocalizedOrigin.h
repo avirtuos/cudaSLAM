@@ -3,10 +3,10 @@
 
 struct LocalizedOrigin
 {
-    int x_offset;
-    int y_offset;
+    int16_t x_offset;
+    int16_t y_offset;
     float angle_offset;
-    int score;
+    int16_t score;
 };
 
 #endif

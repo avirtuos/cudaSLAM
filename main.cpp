@@ -84,7 +84,7 @@ int main(int argc, const char *argv[])
     }
     printf("LiDAR BAUD Rate %ud \n", com_baudrate);
     
-    int search_distance = 50;
+    int search_distance = 100;
     if(argc > 3){
         search_distance = strtoul(argv[3], NULL, 10);
     }
@@ -118,7 +118,7 @@ int main(int argc, const char *argv[])
     Map map(map_size, map_size, scan_buffer_size);
 
     int count = 0;
-    while(count < 30)
+    while(count < 10)
     {
         t1 = high_resolution_clock::now();
         int num_scan_samples = laser.scan(h_scan_p, scan_buffer_size);
@@ -140,7 +140,7 @@ int main(int argc, const char *argv[])
 
         count++;
 
-        if(count > 10){
+        if(count > 5){
             if(dir == 1){
                 ms.forward();
             } else if(dir == 2) {

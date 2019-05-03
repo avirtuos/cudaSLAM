@@ -76,7 +76,7 @@ int LaserScan::scan(TelemetryPoint result_buffer[], const int buffer_length)
                 if(result_size < 1 || result_buffer[result_size-1].x != x || result_buffer[result_size-1].y != y){
                     cur->x = x;
                     cur->y = y;
-                    cur->quality = quality;
+                    //cur->quality = quality;
                     cur->distance = distance;
                     cur->angle = angle;
 

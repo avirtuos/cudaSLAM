@@ -175,55 +175,84 @@ void cudaRunParticleFilter(int search_distance, LocalizedOrigin *result, SimTele
     LocalizedOrigin best;
     best.score = 0;
 
+    int l_scansize = *scan_size;
+
     //Try various angles - TODO: find better sampling technique here possibly even re-sampling
-    for(int angle_offset = 0; angle_offset < 360; angle_offset++)
+    for(uint16_t angle_offset = 0; angle_offset < 360; angle_offset+=2)
     {
         //For each point see if we have a hit
         uint16_t score = 0;
-        int scan_point_offset = angle_offset * *scan_size;
+        uint16_t score2 = 0;
+        int scan_point_offset = angle_offset * l_scansize;
 
-        for(int i = threadIdx.x; i < *scan_size; i += blockDim.x)
+        for(int i = threadIdx.x; i < l_scansize; i += blockDim.x)
         {
             sim_buffer_s[i] = sim_buffer[scan_point_offset + i];
+        }
+
+        int scan_point_offset2 = angle_offset+1 * l_scansize;
+        for(int i = l_scansize + threadIdx.x; i < 2*l_scansize; i += blockDim.x)
+        {
+            sim_buffer_s[i] = sim_buffer[scan_point_offset2 + i];
         }
 
         __syncthreads();
 
         if(x_offset < e_search_distance && y_offset < e_search_distance)
         {
-            for(uint16_t scan_point = 0; scan_point < *scan_size; scan_point++)
+            //#pragma unroll
+            for(uint16_t scan_point = 0; scan_point < l_scansize; scan_point++)
             {
-                //SimTelemetryPoint *scan_point_ptr = sim_buffer_s + scan_point;
-                int16_t x = x_offset + sim_buffer_s[scan_point].x;
-                int16_t y = y_offset + sim_buffer_s[scan_point].y;
+                SimTelemetryPoint sim_point = sim_buffer_s[scan_point];
+                SimTelemetryPoint sim_point2 = sim_buffer_s[scan_point+l_scansize];
 
-                 if(x >= e_width || x <= ne_width || y >= e_height || y <= ne_height )
+                int16_t x = x_offset + sim_point.x;
+                int16_t y = y_offset + sim_point.y;
+                int16_t x2 = x_offset + sim_point2.x;
+                int16_t y2 = y_offset + sim_point2.y;
+
+                if(!(x >= e_width || x <= ne_width || y >= e_height || y <= ne_height))
                 {
-                    continue;
+                    int l_height = (e_height + y);
+                    int l_width = (e_width + x);
+                    int l2_height = l_height * *map_width;
+                    int pos =  l2_height + l_width;
+
+                    //MapPoint *map_point = map + pos;
+                    score += map[pos].occupancy/3;
                 }
 
-                int pos = ((e_height + y) * *map_width) + (e_width + x);
+                if(!(x2 >= e_width || x2 <= ne_width || y2 >= e_height || y2 <= ne_height))
+                {
+                    int l_height = (e_height + y2);
+                    int l_width = (e_width + x2);
+                    int l2_height = l_height * *map_width;
+                    int pos =  l2_height + l_width;
 
-                //MapPoint *map_point = map + pos;
-                score += map[pos].occupancy/3;
+                    //MapPoint *map_point = map + pos;
+                    score2 += map[pos].occupancy/3;
+                }
             }
         }
 
-        if(best.score < score)
+        if(score > score2 && best.score < score)
         {
             best.x_offset = x_offset;
             best.y_offset = y_offset;
             best.angle_offset = angle_offset;
             best.score = score;
+        } else if(score2 > score && best.score < score2)
+        {
+            best.x_offset = x_offset;
+            best.y_offset = y_offset;
+            best.angle_offset = angle_offset+1;
+            best.score = score2;
         }
 
         __syncthreads();
     }
 
-    result[offset].x_offset = best.x_offset;
-    result[offset].y_offset = best.y_offset;
-    result[offset].angle_offset = best.angle_offset;
-    result[offset].score = best.score;
+    result[offset] = best;
 }
 
 
@@ -292,9 +321,9 @@ TelemetryPoint Map::update(int32_t search_distance, TelemetryPoint scan_data[], 
     cudaMemcpy(scan_buffer_d, scan_data, bytes, cudaMemcpyHostToDevice);
     cudaMemcpy(scan_size_d, &scan_size, sizeof(int), cudaMemcpyHostToDevice);
 
-    cudeGenerateParticleFilter <<< scan_size * 360 / 1024, 1024, scan_size *sizeof(TelemetryPoint) >>> (sim_buffer_d, sim_size_d, scan_buffer_d, scan_size_d);
+    cudeGenerateParticleFilter <<< (scan_size * 360 / 1024) + 1, 1024, scan_size *sizeof(TelemetryPoint) >>> (sim_buffer_d, sim_size_d, scan_buffer_d, scan_size_d);
     cudaDeviceSynchronize();
-    cudaRunParticleFilter <<< (search_distance*search_distance)/512 + 1, 512, scan_size *sizeof(SimTelemetryPoint)>>>(search_distance, result_d, sim_buffer_d, sim_size_d, scan_buffer_d, scan_size_d, map_d, width_d, height_d);
+    cudaRunParticleFilter <<< ceil((search_distance*search_distance)/256.0), 256, 2*scan_size *sizeof(SimTelemetryPoint)>>>(search_distance, result_d, sim_buffer_d, sim_size_d, scan_buffer_d, scan_size_d, map_d, width_d, height_d);
     cudaDeviceSynchronize();
     //shared memory must be >= threads per block
     int num_localization_blocks = 32;
@@ -302,6 +331,8 @@ TelemetryPoint Map::update(int32_t search_distance, TelemetryPoint scan_data[], 
     cudaDeviceSynchronize();
 
     cudaMemcpy(localized_result_h, localized_result_d, localized_size*sizeof(LocalizedOrigin), cudaMemcpyDeviceToHost);
+    checkCuda( cudaMemcpy(map_h, map_d, map_bytes, cudaMemcpyDeviceToHost));
+
     cudaDeviceSynchronize();
 
     LocalizedOrigin best;
@@ -318,9 +349,7 @@ TelemetryPoint Map::update(int32_t search_distance, TelemetryPoint scan_data[], 
     printf("BEST-FAST: x: %d  y: %d  a: %.2f  s: %d\n", best.x_offset, best.y_offset, best.angle_offset, best.score);
 
     cudaUpdateMap <<< 32, 256 >>> (scan_buffer_d, scan_size_d, map_d, width_d, height_d, best);
-    cudaDeviceSynchronize();
-    checkCuda( cudaMemcpy(map_h, map_d, map_bytes, cudaMemcpyDeviceToHost));
-
+   
     checkCuda( cudaEventRecord(stopEvent, 0) );
     checkCuda( cudaEventSynchronize(stopEvent) );
 
@@ -335,5 +364,5 @@ TelemetryPoint Map::update(int32_t search_distance, TelemetryPoint scan_data[], 
     CheckpointWriter::checkpoint("cuda", width, height, scan_data, scan_size, map_h, &best);
 
     cudaProfilerStop();
-    return TelemetryPoint{0, 0, 0, 0, 0};
+    return TelemetryPoint{0, 0, 0, 0};
 }

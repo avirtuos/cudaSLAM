@@ -21,7 +21,7 @@ void CheckpointWriter::checkpoint(const string prefix, int32_t width, int32_t he
 	char buffer [30];	
 
 	for(int i = 0; i < scan_size; i++){
-		addScanData(pixels, width, height, width/2 + scan_data[i].x/scale_factor, height/2 + (-1 * scan_data[i].y/scale_factor), 255, 0 ,0 , scan_data[i].quality);
+		addScanData(pixels, width, height, width/2 + scan_data[i].x/scale_factor, height/2 + (-1 * scan_data[i].y/scale_factor), 255, 0 ,0 , 255);
 	}
 	addScanData(pixels, width, height, width/2, height/2, 0, 255 ,0 , 255);
 

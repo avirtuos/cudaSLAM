@@ -66,7 +66,7 @@ int LaserScan::scan(TelemetryPoint result_buffer[], const int buffer_length)
             if(quality > 0)
             {
                 //convert to centi-meters by dividing by 10, millimeter resolution isn't useful
-                float distance = (nodes[pos].dist_mm_q2 / 4.0f)/10;
+                float distance = (nodes[pos].dist_mm_q2 / 4.0f)/1;
                 float angle = (getAngle(nodes[pos]) * 3.14159265 / 180);
                 int16_t x = roundf(sin (angle) * distance);
                 int16_t y = roundf(cos (angle) * distance);

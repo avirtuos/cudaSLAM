@@ -24,7 +24,7 @@ class Map
 
 public:
     Map(int32_t width_arg, int32_t height_arg, int32_t scan_buffer);
-    TelemetryPoint update(int32_t search_distance, TelemetryPoint scan_data[], int scan_size);
+    LocalizedOrigin update(int32_t search_distance, TelemetryPoint scan_data[], int scan_size);
     ~Map();
 
 

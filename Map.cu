@@ -219,7 +219,10 @@ void cudaRunParticleFilter(int search_distance, LocalizedOrigin *result, SimTele
                     int pos =  l2_height + l_width;
 
                     //MapPoint *map_point = map + pos;
-                    score += map[pos].occupancy/3;
+                    
+                    if(map[pos].occupancy > 3){
+                        score ++;
+                    }
                 }
 
                 if(!(x2 >= e_width || x2 <= ne_width || y2 >= e_height || y2 <= ne_height))
@@ -230,7 +233,9 @@ void cudaRunParticleFilter(int search_distance, LocalizedOrigin *result, SimTele
                     int pos =  l2_height + l_width;
 
                     //MapPoint *map_point = map + pos;
-                    score2 += map[pos].occupancy/3;
+                    if(map[pos].occupancy > 3){
+                        score2 ++;
+                    }
                 }
             }
         }
@@ -266,18 +271,17 @@ void cudaUpdateMap(TelemetryPoint *scan_buffer, int *scan_size, MapPoint *map, i
     int offset = blockIdx.x * blockDim.x + threadIdx.x;
 
     int map_size = *map_width * *map_height;
-    /*for(int i = offset; i < map_size; i += gridDim.x * blockDim.x)
+    for(int i = offset; i < map_size; i += gridDim.x * blockDim.x)
     {
-        if(map[i].occupancy > 0)
+        if(map[i].occupancy > 0 && map[i].occupancy < 9)
         {
-            //printf("MAP: i: %d, s: %d \n", map[i].occupancy);
             map[i].occupancy -= 1;
         }
     }
 
     //synchronizing across blocks would be better - TODO: get grid_group and sync working. Was facing linking errors with this.
     __syncthreads();
-    */
+    
 
     if(offset >= *scan_size)
     {
@@ -291,24 +295,28 @@ void cudaUpdateMap(TelemetryPoint *scan_buffer, int *scan_size, MapPoint *map, i
     int x = roundf(__sinf (angle_num) * distance) + origin.x_offset;
     int y = roundf(__cosf (angle_num) * distance) + origin.y_offset;
     
-    int pos = ((*map_height / 2 + y) * *map_width) + (*map_height / 2 + x);
-
-    if(pos > map_size)
-    {
-        return;
+    int map_pad = 4;
+    for(int yp = -1*map_pad; yp < map_pad; yp++){
+        for(int xp = -1*map_pad; xp < map_pad; xp++){
+            int pos = ((*map_height / 2 + y + yp) * *map_width) + (*map_height / 2 + x + xp);
+            if(pos < map_size)
+            {
+                MapPoint *cur_map = map + pos;
+                if(cur_map->occupancy < 9)
+                {
+                    cur_map->occupancy+=3;
+                }
+            }
+        }
     }
 
     //printf("Point: x: %d y: %d, a: %.2f p: %d\n", cur_point->x, cur_point->y, cur_point->angle, pos);
-    MapPoint *cur_map = map + pos;
-    if(cur_map->occupancy < 3)
-    {
-        cur_map->occupancy++;
-    }
+    
     //printf("MAP: o: %d p: %d - x: %d. y: %d a:%.2f, q: %d\n", offset, pos, cur_point->x, cur_point->y, cur_point->angle, cur_point->quality);
 }
 
 
-TelemetryPoint Map::update(int32_t search_distance, TelemetryPoint scan_data[], int scan_size)
+LocalizedOrigin Map::update(int32_t search_distance, TelemetryPoint scan_data[], int scan_size)
 {
 
     cudaProfilerStart();
@@ -341,6 +349,7 @@ TelemetryPoint Map::update(int32_t search_distance, TelemetryPoint scan_data[], 
     best.y_offset = 0;
     best.angle_offset = 0;
     for(int i = 0; i < num_localization_blocks; i++){
+        printf("CANDIDATE: x: %d  y: %d  a: %.2f  s: %d\n", localized_result_h[i].x_offset, localized_result_h[i].y_offset, localized_result_h[i].angle_offset, localized_result_h[i].score);
         if(localized_result_h[i].score > best.score){
             best = localized_result_h[i];
         }
@@ -348,7 +357,10 @@ TelemetryPoint Map::update(int32_t search_distance, TelemetryPoint scan_data[], 
 
     printf("BEST-FAST: x: %d  y: %d  a: %.2f  s: %d\n", best.x_offset, best.y_offset, best.angle_offset, best.score);
 
-    cudaUpdateMap <<< 32, 256 >>> (scan_buffer_d, scan_size_d, map_d, width_d, height_d, best);
+    float match_score = 100.0 * best.score / scan_size;
+    if(match_score > 70 || (best.x_offset == 0 && best.y_offset == 0 && best.angle_offset == 0)){
+        cudaUpdateMap <<< 32, 256 >>> (scan_buffer_d, scan_size_d, map_d, width_d, height_d, best);
+    }
    
     checkCuda( cudaEventRecord(stopEvent, 0) );
     checkCuda( cudaEventSynchronize(stopEvent) );
@@ -361,8 +373,10 @@ TelemetryPoint Map::update(int32_t search_distance, TelemetryPoint scan_data[], 
     printf("Map::update processed %d points and took %.2f ms\n", scan_size, time);
     cudaDeviceSynchronize();
 
-    CheckpointWriter::checkpoint("cuda", width, height, scan_data, scan_size, map_h, &best);
+    //if(best.score > 300){
+        CheckpointWriter::checkpoint("cuda", width, height, scan_data, scan_size, map_h, &best);
+    //}
 
     cudaProfilerStop();
-    return TelemetryPoint{0, 0, 0, 0};
+    return best;
 }

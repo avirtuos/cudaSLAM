@@ -38,6 +38,10 @@
 #include "TelemetryPoint.h"
 #include "CudaUtils.h"
 #include "MotionSystem.h"
+#include "LocalizedOrigin.h"
+#include <thread>         // std::this_thread::sleep_for
+#include <chrono>         // std::chrono::seconds
+ 
 
 #define DEBUG
 
@@ -82,7 +86,7 @@ int main(int argc, const char *argv[])
     if(argc > 1){
         com_baudrate = strtoul(argv[2], NULL, 10);
     }
-    printf("LiDAR BAUD Rate %ud \n", com_baudrate);
+    printf("LiDAR BAUD Rate %u \n", com_baudrate);
     
     int search_distance = 100;
     if(argc > 3){
@@ -114,11 +118,11 @@ int main(int argc, const char *argv[])
     //source: https://devblogs.nvidia.com/how-optimize-data-transfers-cuda-cc/
     checkCuda(cudaMallocHost((void **)&h_scan_p, scan_buffer_size * sizeof(TelemetryPoint)));
 
-    int map_size = 2000;
+    int map_size = 15000;
     Map map(map_size, map_size, scan_buffer_size);
 
     int count = 0;
-    while(count < 10)
+    while(count < 20)
     {
         t1 = high_resolution_clock::now();
         int num_scan_samples = laser.scan(h_scan_p, scan_buffer_size);
@@ -128,23 +132,30 @@ int main(int argc, const char *argv[])
         t1 = high_resolution_clock::now();
         CheckpointWriter::advanceCheckpoint();
        // CheckpointWriter::checkpoint("scan", map_size,map_size, h_scan_p, num_scan_samples);
-        map.update(search_distance, h_scan_p, num_scan_samples);
+        LocalizedOrigin origin = map.update(search_distance, h_scan_p, num_scan_samples);
         t2 = high_resolution_clock::now();
         auto cp_dur = duration_cast<milliseconds>( t2 - t1 ).count();
 
-        cout << "Scan Dur: " << scan_dur << " ms" << " SLAM Dur: " << cp_dur << "ms " <<  " with search area of " << (search_distance*search_distance)/(100*100) << " meters" << endl;
+        cout << "Scan Dur: " << scan_dur << " ms" << " SLAM Dur: " << cp_dur << "ms " <<  " with search area of " 
+            << (search_distance*search_distance)/(100*100) << " meters and score of "<< origin.score << endl;
+
         if (ctrl_c_pressed)
         {
             break;
         }
 
-        count++;
-
-        if(count > 5){
+        if(origin.score > 300){
+            count++;
             if(dir == 1){
+                printf("Moving fwd.");
                 ms.forward();
+                std::this_thread::sleep_for (std::chrono::milliseconds(500));
+                ms.stop();
             } else if(dir == 2) {
+                printf("Moving bkwd.");
                 ms.backward();
+                std::this_thread::sleep_for (std::chrono::milliseconds(500));
+                ms.stop();
             }
         }
         /*

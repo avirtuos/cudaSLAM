@@ -33,7 +33,7 @@ void CheckpointWriter::checkpoint(const string prefix, int32_t width, int32_t he
 }
 
 void CheckpointWriter::checkpoint(const string prefix, int32_t width, int32_t height, TelemetryPoint scan_data[], int scan_size, MapPoint map[], LocalizedOrigin *location){
-	int scale_factor = 20;
+	int scale_factor = 10;
 	unique_lock<mutex> lock(jpeg_mutex);
 	int32_t img_width = width/scale_factor;
 	int32_t img_height = height/scale_factor;

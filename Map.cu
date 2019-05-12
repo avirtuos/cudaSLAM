@@ -39,6 +39,9 @@ Map::Map(int width_arg, int height_arg, int scan_buffer_size)
     localized_size = 10000;
     checkCuda(cudaMallocHost((void **)&localized_result_h, localized_size * sizeof(LocalizedOrigin)));
     checkCuda(cudaMalloc((void **)&localized_result_d, localized_size * sizeof(LocalizedOrigin)));
+
+    mapWriter = new MapWriter(100, width_arg, height_arg);
+    _count = 0;
 }
 
 Map::~Map()
@@ -356,6 +359,16 @@ LocalizedOrigin Map::update(int32_t search_distance, TelemetryPoint scan_data[],
     }
 
     printf("BEST-FAST: x: %d  y: %d  a: %.2f  s: %d\n", best.x_offset, best.y_offset, best.angle_offset, best.score);
+
+
+    //Temporary
+    for(int i = 0; i < scan_size; i++){
+        mapWriter->addPoint(scan_data[i].x, scan_data[i].y);
+    }
+    //mapWriter->dump(_count++);
+    printf("New Map: indexSize: %d bytes, MapSize: %d bytes\n", mapWriter->getIndexSizeBytes(), mapWriter->getMapSizeBytes());
+
+    //End Temporary
 
     float match_score = 100.0 * best.score / scan_size;
     if(match_score > 70 || (best.x_offset == 0 && best.y_offset == 0 && best.angle_offset == 0)){

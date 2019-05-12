@@ -3,6 +3,8 @@
 
 struct MapPoint
 {
+    int16_t x;
+    int16_t y;
 	unsigned char occupancy;
 };
 

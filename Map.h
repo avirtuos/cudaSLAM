@@ -10,6 +10,7 @@
 #include "TelemetryPoint.h"
 #include "SimTelemetryPoint.h"
 #include "LocalizedOrigin.h"
+#include "MapWriter.h"
 #include "MapPoint.h"
 #include <mutex>          // std::mutex, std::unique_lock
 #include <cuda_runtime_api.h>
@@ -46,4 +47,6 @@ private:
     LocalizedOrigin *localized_result_d;
     LocalizedOrigin *localized_result_h;
     int localized_size;
+    MapWriter* mapWriter;
+    int _count;
 };

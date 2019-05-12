@@ -12,6 +12,8 @@
 #include "LocalizedOrigin.h"
 #include "MapWriter.h"
 #include "MapPoint.h"
+#include "MapIndex.h"
+#include "MapReader.h"
 #include <mutex>          // std::mutex, std::unique_lock
 #include <cuda_runtime_api.h>
 #include <cuda.h>

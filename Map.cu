@@ -360,13 +360,28 @@ LocalizedOrigin Map::update(int32_t search_distance, TelemetryPoint scan_data[],
 
     printf("BEST-FAST: x: %d  y: %d  a: %.2f  s: %d\n", best.x_offset, best.y_offset, best.angle_offset, best.score);
 
-
     //Temporary
+    LocalizedOrigin origin = best;
     for(int i = 0; i < scan_size; i++){
-        mapWriter->addPoint(scan_data[i].x, scan_data[i].y);
+        TelemetryPoint *cur_point = scan_data + i;
+        float distance = cur_point->distance;
+        float angle_num = cur_point->angle + origin.angle_offset;
+
+        int x = round(sin (angle_num) * distance) + origin.x_offset;
+        int y = round(cos (angle_num) * distance) + origin.y_offset;
+    
+        mapWriter->addPoint(x, y);
     }
     //mapWriter->dump(_count++);
-    printf("New Map: indexSize: %d bytes, MapSize: %d bytes\n", mapWriter->getIndexSizeBytes(), mapWriter->getMapSizeBytes());
+    printf("New Map: indexSize: %d bytes, MapSize: %d bytes - num_points %lu\n", mapWriter->getIndexSizeBytes(), mapWriter->getMapSizeBytes(), mapWriter->getMapSizeBytes()/sizeof(MapPoint));
+
+    MapIndex *index_t = (MapIndex*)malloc(mapWriter->getIndexSizeBytes());
+    MapPoint *map_t = (MapPoint*)malloc(mapWriter->getMapSizeBytes());
+
+    mapWriter->getIndex(index_t);
+    mapWriter->getMap(map_t);
+
+    MapReader mapReader = MapReader(mapWriter->getNumBuckets(), width, height, index_t, map_t);
 
     //End Temporary
 
@@ -387,9 +402,12 @@ LocalizedOrigin Map::update(int32_t search_distance, TelemetryPoint scan_data[],
     cudaDeviceSynchronize();
 
     //if(best.score > 300){
-        CheckpointWriter::checkpoint("cuda", width, height, scan_data, scan_size, map_h, &best);
+        //CheckpointWriter::checkpoint("cuda", width, height, scan_data, scan_size, map_h, &best);
+        CheckpointWriter::checkpoint("compact_map", width, height, scan_data, scan_size, mapReader.getMapSize(), mapReader.getMap(), &best);
     //}
 
+    free(index_t);
+    free(map_t);
     cudaProfilerStop();
     return best;
 }

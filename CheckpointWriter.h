@@ -18,8 +18,8 @@ class CheckpointWriter
 {
 
 public:
-    static void checkpoint(const string prefix,int32_t width, int32_t height, TelemetryPoint scan_data[], int scan_size);
     static void checkpoint(const string prefix, int32_t width, int32_t height, TelemetryPoint scan_data[], int scan_size, MapPoint map[], LocalizedOrigin *location);
+    static void checkpoint(const string prefix, int32_t width, int32_t height, TelemetryPoint scan_data[], int scan_size, int map_size, MapPoint *map, LocalizedOrigin *location);
     static void advanceCheckpoint();
 
 private:

@@ -17,6 +17,9 @@ public:
     void dump(int count);
     int getIndexSizeBytes();
     int getMapSizeBytes();
+    void getIndex(MapIndex *index);
+    void getMap(MapPoint *map);
+    int getNumBuckets();
     ~MapWriter();
 
 private:

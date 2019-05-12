@@ -17,8 +17,21 @@ MapWriter::MapWriter(int32_t num_buckets, int32_t width, int32_t height){
 	}
 }
 
+int MapWriter::getNumBuckets(){
+	return _num_buckets;
+}
+
 int MapWriter::getIndexSizeBytes(){
 	return _num_buckets * sizeof(MapIndex);
+}
+
+void MapWriter::getIndex(MapIndex *index){
+	int offset=0;
+	for(int i = 0; i < _num_buckets; i++){
+		(index+i)->offset = offset;
+		(index+i)->size = (_index+i)->size;
+		offset += (_index+i)->size;
+	}
 }
 
 int MapWriter::getMapSizeBytes(){
@@ -28,6 +41,19 @@ int MapWriter::getMapSizeBytes(){
 		num_points += index->size;
 	}
 	return num_points * sizeof(MapPoint);
+}
+
+void MapWriter::getMap(MapPoint *map){
+	int num_points = 0;
+	for(int i = 0; i < _num_buckets; i++){
+		MapIndex *index = _index + i;
+		for(int j = 0; j < index->size; j++){
+			MapPoint *src = _map + (_bucket_size * i) + j;
+			MapPoint *dst = map + num_points + j;
+			*dst = *src;
+		}
+		num_points += index->size;
+	}
 }
 
 void MapWriter::dump(int count){

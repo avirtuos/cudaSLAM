@@ -8,6 +8,13 @@
 
 using namespace std;
 
+/**
+ * This class is used to write a compacted occupancy map. Unfortunately, using a compacted
+ * map is nearly 2x slower than using a simple bitmap representation of a map. So if you map can be smaller than 60 sqr meters
+ * compacted maps are not worth it.
+ *
+ * We may use this to minimize the size of the map exported from the GPU to the Host though.
+ **/
 class MapWriter
 {
 

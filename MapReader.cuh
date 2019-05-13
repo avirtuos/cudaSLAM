@@ -6,6 +6,11 @@
 
 using namespace std;
 
+/**
+ * This class is used to read a compacted occupancy map written by MapWriter. Unfortunately, using a compacted
+ * map is nearly 2x slower than using a simple bitmap representation of a map. So if you map can be smaller than 60 sqr meters
+ * compated maps are not worth it.
+ **/
 class MapReader
 {
 

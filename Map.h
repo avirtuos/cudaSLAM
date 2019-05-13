@@ -13,7 +13,7 @@
 #include "MapWriter.h"
 #include "MapPoint.h"
 #include "MapIndex.h"
-#include "MapReader.h"
+#include "MapReader.cuh"
 #include <mutex>          // std::mutex, std::unique_lock
 #include <cuda_runtime_api.h>
 #include <cuda.h>

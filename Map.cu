@@ -40,7 +40,7 @@ Map::Map(int width_arg, int height_arg, int scan_buffer_size)
     checkCuda(cudaMallocHost((void **)&localized_result_h, localized_size * sizeof(LocalizedOrigin)));
     checkCuda(cudaMalloc((void **)&localized_result_d, localized_size * sizeof(LocalizedOrigin)));
 
-    mapWriter = new MapWriter(100, width_arg, height_arg);
+    mapWriter = new MapWriter(1000000, width_arg, height_arg);
     _count = 0;
 }
 
@@ -264,6 +264,87 @@ void cudaRunParticleFilter(int search_distance, LocalizedOrigin *result, SimTele
 }
 
 
+//TODO: There is opportunity to speed this up using hints from odometry or even just simple distance traveled estimates.
+__global__
+void cudaRunParticleFilter2(int search_distance, LocalizedOrigin *result, SimTelemetryPoint *sim_buffer, int *sim_size, TelemetryPoint *scan_buffer, int *scan_size, int num_buckets, MapIndex *index, MapPoint *map, int *map_width, int *map_height)
+{
+    extern __shared__ SimTelemetryPoint sim_buffer_s[];
+    MapReader mapReader = MapReader(num_buckets, *map_width, *map_height, index, map);
+    int offset = blockIdx.x * blockDim.x + threadIdx.x;
+
+    uint16_t e_search_distance = search_distance / 2;
+    int16_t x_offset = (-1 * e_search_distance) + offset % (e_search_distance * 2);
+    int16_t y_offset = (-1 * e_search_distance) + floorf(offset / (e_search_distance * 2));
+
+    //int max_pos = *map_width * *map_height;
+
+    //int e_width = (*map_width / 2);
+    //int e_height = (*map_height / 2);
+
+    LocalizedOrigin best;
+    best.score = 0;
+
+    int l_scansize = *scan_size;
+
+    //Try various angles - TODO: find better sampling technique here possibly even re-sampling
+    for(uint16_t angle_offset = 0; angle_offset < 360; angle_offset+=2)
+    {
+        //For each point see if we have a hit
+        uint16_t score = 0;
+        uint16_t score2 = 0;
+        int scan_point_offset = angle_offset * l_scansize;
+
+        for(int i = threadIdx.x; i < l_scansize; i += blockDim.x)
+        {
+            sim_buffer_s[i] = sim_buffer[scan_point_offset + i];
+        }
+
+        int scan_point_offset2 = angle_offset+1 * l_scansize;
+        for(int i = l_scansize + threadIdx.x; i < 2*l_scansize; i += blockDim.x)
+        {
+            sim_buffer_s[i] = sim_buffer[scan_point_offset2 + i];
+        }
+
+        __syncthreads();
+
+        if(x_offset < e_search_distance && y_offset < e_search_distance)
+        {
+            //#pragma unroll
+            for(uint16_t scan_point = 0; scan_point < l_scansize; scan_point++)
+            {
+                SimTelemetryPoint sim_point = sim_buffer_s[scan_point];
+                SimTelemetryPoint sim_point2 = sim_buffer_s[scan_point+l_scansize];
+
+                int16_t x = x_offset + sim_point.x;
+                int16_t y = y_offset + sim_point.y;
+                int16_t x2 = x_offset + sim_point2.x;
+                int16_t y2 = y_offset + sim_point2.y;
+
+                score += mapReader.getOccupancy(x,y);
+                score2 += mapReader.getOccupancy(x2,y2);
+            }
+        }
+
+        if(score > score2 && best.score < score)
+        {
+            best.x_offset = x_offset;
+            best.y_offset = y_offset;
+            best.angle_offset = angle_offset;
+            best.score = score;
+        } else if(score2 > score && best.score < score2)
+        {
+            best.x_offset = x_offset;
+            best.y_offset = y_offset;
+            best.angle_offset = angle_offset+1;
+            best.score = score2;
+        }
+
+        __syncthreads();
+    }
+
+    result[offset] = best;
+}
+
 //TODO: So far we've only been working on Localization, we need to start thinking about mapping or rather
 //when to update the map with newly scanned points. I suspect that cold start might be a special case but
 //it needs more thinking. I like the idea of the map being fully mutable, not just additive which is what
@@ -334,8 +415,26 @@ LocalizedOrigin Map::update(int32_t search_distance, TelemetryPoint scan_data[],
 
     cudeGenerateParticleFilter <<< (scan_size * 360 / 1024) + 1, 1024, scan_size *sizeof(TelemetryPoint) >>> (sim_buffer_d, sim_size_d, scan_buffer_d, scan_size_d);
     cudaDeviceSynchronize();
-    cudaRunParticleFilter <<< ceil((search_distance*search_distance)/256.0), 256, 2*scan_size *sizeof(SimTelemetryPoint)>>>(search_distance, result_d, sim_buffer_d, sim_size_d, scan_buffer_d, scan_size_d, map_d, width_d, height_d);
+    //cudaRunParticleFilter <<< ceil((search_distance*search_distance)/256.0), 256, 2*scan_size *sizeof(SimTelemetryPoint)>>>(search_distance, result_d, sim_buffer_d, sim_size_d, scan_buffer_d, scan_size_d, map_d, width_d, height_d);
+    
+    MapIndex *index_h, *index_d;
+    MapPoint *c_map_h, *c_map_d;
+
+    checkCuda(cudaMallocHost((void **)&index_h, mapWriter->getIndexSizeBytes()));
+    checkCuda(cudaMallocHost((void **)&c_map_h, mapWriter->getMapSizeBytes()));
+
+    mapWriter->getIndex(index_h);
+    mapWriter->getMap(c_map_h);
+
+    checkCuda(cudaMalloc((void **)&index_d, mapWriter->getIndexSizeBytes()));
+    checkCuda(cudaMalloc((void **)&c_map_d, mapWriter->getMapSizeBytes()));
+
+    cudaMemcpy(index_d, index_h, mapWriter->getIndexSizeBytes(), cudaMemcpyHostToDevice);
+    cudaMemcpy(c_map_d, c_map_h, mapWriter->getMapSizeBytes(), cudaMemcpyHostToDevice);
+
+    cudaRunParticleFilter2 <<< ceil((search_distance*search_distance)/256.0), 256, 2*scan_size *sizeof(SimTelemetryPoint)>>>(search_distance, result_d, sim_buffer_d, sim_size_d, scan_buffer_d, scan_size_d, mapWriter->getNumBuckets(), index_d, c_map_d, width_d, height_d);
     cudaDeviceSynchronize();
+
     //shared memory must be >= threads per block
     int num_localization_blocks = 32;
     cudaLocalizeParticleFilter <<< num_localization_blocks, 128, 128*sizeof(LocalizedOrigin)>>>(localized_result_d, localized_size, result_d, map_update_dim * map_update_dim);
@@ -352,7 +451,7 @@ LocalizedOrigin Map::update(int32_t search_distance, TelemetryPoint scan_data[],
     best.y_offset = 0;
     best.angle_offset = 0;
     for(int i = 0; i < num_localization_blocks; i++){
-        printf("CANDIDATE: x: %d  y: %d  a: %.2f  s: %d\n", localized_result_h[i].x_offset, localized_result_h[i].y_offset, localized_result_h[i].angle_offset, localized_result_h[i].score);
+        //printf("CANDIDATE: x: %d  y: %d  a: %.2f  s: %d\n", localized_result_h[i].x_offset, localized_result_h[i].y_offset, localized_result_h[i].angle_offset, localized_result_h[i].score);
         if(localized_result_h[i].score > best.score){
             best = localized_result_h[i];
         }
@@ -408,6 +507,10 @@ LocalizedOrigin Map::update(int32_t search_distance, TelemetryPoint scan_data[],
 
     free(index_t);
     free(map_t);
+    cudaFreeHost(index_h);
+    cudaFree(index_d);
+    cudaFreeHost(c_map_h);
+    cudaFree(c_map_d);
     cudaProfilerStop();
     return best;
 }

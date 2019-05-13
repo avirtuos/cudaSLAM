@@ -26,7 +26,7 @@ private:
 
 MotionSystem::MotionSystem(char dest[18])
 {
-    enabled = true;
+    enabled = false;
 
     if(!enabled){return;}
     struct sockaddr_rc addr = { 0 };

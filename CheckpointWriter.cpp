@@ -10,7 +10,7 @@ void CheckpointWriter::writeJpegByte(unsigned char oneByte)
 }
 
 void CheckpointWriter::checkpoint(const string prefix, int32_t width, int32_t height, TelemetryPoint scan_data[], int scan_size, MapPoint map[], LocalizedOrigin *location){
-	int scale_factor = 2;
+	int scale_factor = 3;
 	unique_lock<mutex> lock(jpeg_mutex);
 	int32_t img_width = width/scale_factor;
 	int32_t img_height = height/scale_factor;
@@ -49,7 +49,7 @@ void CheckpointWriter::checkpoint(const string prefix, int32_t width, int32_t he
 			, 0, 0 ,255 , 255, 1);
 	}
 
-	addScanData(pixels, img_width, img_height, (width/2 + location->x_offset)/scale_factor, (height/2 - location->y_offset)/scale_factor, 255, 128 ,30 , 255, 4);
+	addScanData(pixels, img_width, img_height, (width/2 + location->x_offset)/scale_factor, (height/2 - location->y_offset)/scale_factor, 255, 128 ,30 , 255, 8);
 
 	char buffer [40];	
 	sprintf (buffer, "./maps/map_%s_%d_%d.jpg",prefix.c_str(), _checkpoint_num, scan_size);
@@ -60,7 +60,7 @@ void CheckpointWriter::checkpoint(const string prefix, int32_t width, int32_t he
 
 
 void CheckpointWriter::checkpoint(const string prefix, int32_t width, int32_t height, TelemetryPoint scan_data[], int scan_size, int map_size, MapPoint *map, LocalizedOrigin *location){
-	int scale_factor = 1;
+	int scale_factor = 3;
 	unique_lock<mutex> lock(jpeg_mutex);
 	int32_t e_width = width/2;
 	int32_t e_height = height/2;
@@ -100,7 +100,7 @@ void CheckpointWriter::checkpoint(const string prefix, int32_t width, int32_t he
 			, 0, 0 ,255 , 255, 1);
 	}
 
-	addScanData(pixels, img_width, img_height, (e_width + location->x_offset)/scale_factor, (e_height - location->y_offset)/scale_factor, 255, 128 ,30 , 255, 4);
+	addScanData(pixels, img_width, img_height, (e_width + location->x_offset)/scale_factor, (e_height - location->y_offset)/scale_factor, 64, 128 ,255 , 255, 8);
 
 	char buffer [40];	
 	sprintf (buffer, "./maps/map_%s_%d_%d.jpg",prefix.c_str(), _checkpoint_num, scan_size);

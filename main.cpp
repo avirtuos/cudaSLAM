@@ -58,6 +58,8 @@ void ctrlc(int)
 
 int main(int argc, const char *argv[])
 {
+    //remove once dev is completed
+    cudaDeviceReset();
     int deviceCount;
     cudaGetDeviceCount(&deviceCount);
     int device;
@@ -88,7 +90,7 @@ int main(int argc, const char *argv[])
     }
     printf("LiDAR BAUD Rate %u \n", com_baudrate);
     
-    int search_distance = 100;
+    int search_distance = 50;
     if(argc > 3){
         search_distance = strtoul(argv[3], NULL, 10);
     }
@@ -118,11 +120,11 @@ int main(int argc, const char *argv[])
     //source: https://devblogs.nvidia.com/how-optimize-data-transfers-cuda-cc/
     checkCuda(cudaMallocHost((void **)&h_scan_p, scan_buffer_size * sizeof(TelemetryPoint)));
 
-    int map_size = 1500;
+    int map_size = 3000;
     Map map(map_size, map_size, scan_buffer_size);
 
     int count = 0;
-    while(count < 20)
+    while(count < 10)
     {
         t1 = high_resolution_clock::now();
         int num_scan_samples = laser.scan(h_scan_p, scan_buffer_size);

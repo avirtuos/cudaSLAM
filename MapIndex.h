@@ -5,8 +5,8 @@
 
 struct MapIndex
 {
-    uint32_t offset;
-    uint32_t size;
+    uint8_t offset;
+    uint8_t size;
 };
 
 #endif
